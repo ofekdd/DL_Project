@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 from torchmetrics import MetricCollection
 import numpy as np
-from models import CNNBaseline, ResNetSpec
+from models import CNNBaseline, ResNetSpec, MultiSTFTCNN
 from training.callbacks import default_callbacks
 from training.metrics import MetricCollection
 from data.dataset import NpyDataset, pad_collate
@@ -15,15 +15,34 @@ class LitModel(pl.LightningModule):
     def __init__(self, cfg):
         super().__init__()
         n_classes = 11
-        if cfg.get("model_name","cnn") == "resnet34":
+        model_name = cfg.get("model_name", "cnn")
+        self.model_type = model_name
+
+        if model_name == "resnet34":
             self.model = ResNetSpec(n_classes)
+        elif model_name == "9cnn":
+            self.model = MultiSTFTCNN(n_classes)
         else:
             self.model = CNNBaseline(n_classes)
+
         self.metrics = MetricCollection(n_classes)
         self.lr = cfg["learning_rate"]
         self.save_hyperparameters(cfg)
 
-    def forward(self, x): return self.model(x)
+    def forward(self, x): 
+        if self.model_type == "9cnn" and isinstance(x, torch.Tensor):
+            # For 9CNN, we need to split the input tensor into 9 separate tensors
+            # This is a simplified approach - in a real application, you might want to handle this differently
+            # Here we're assuming all 9 spectrograms are stacked in the channel dimension
+            if x.dim() == 4 and x.size(1) >= 9:  # [B, C, H, W] where C >= 9
+                x_list = [x[:, i:i+1, :, :] for i in range(9)]
+                return self.model(x_list)
+            else:
+                # If input doesn't have enough channels, duplicate the first channel
+                x_list = [x for _ in range(9)]
+                return self.model(x_list)
+        else:
+            return self.model(x)
 
     def common_step(self, batch, stage):
         x, y = batch
