@@ -1,7 +1,5 @@
-
-torch>=2.2
-torchaudio>=2.2
-pytorch-lightning>=2.5.1.post0
+torch>=2.7.0
+lightning-fabric==2.0.0
 librosa>=0.10
 numpy
 scipy
