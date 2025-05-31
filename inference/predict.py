@@ -5,6 +5,8 @@ import argparse, yaml, torch, librosa, numpy as np, pathlib
 from models.multi_stft_cnn import MultiSTFTCNN
 from data.preprocess import generate_multi_stft
 from data.dataset import LABELS
+from var import n_ffts, band_ranges
+
 
 def extract_features(path, cfg):
     y, sr = librosa.load(path, sr=cfg['sample_rate'], mono=True)
@@ -13,8 +15,8 @@ def extract_features(path, cfg):
     # For MultiSTFTCNN, we need all 9 spectrograms (3 window sizes × 3 frequency bands)
     # Convert each spectrogram to a tensor with shape (1, 1, F, T)
     specs_list = []
-    for n_fft in (256, 512, 1024):
-        for band_range in ("0-1000Hz", "1000-4000Hz", "4000-11025Hz"):
+    for n_fft in n_ffts:
+        for band_range in band_ranges:
             key = (band_range, n_fft)
             if key in specs_dict:
                 spec = specs_dict[key]

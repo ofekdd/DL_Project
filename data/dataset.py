@@ -3,7 +3,8 @@ import numpy as np
 import pathlib
 from torch.utils.data import Dataset, DataLoader
 
-LABELS = ["cello", "clarinet", "flute", "acoustic_guitar", "organ", "piano", "saxophone", "trumpet", "violin", "voice", "other"]
+from var import band_ranges, n_ffts, LABELS
+
 
 def pad_collate(batch):
     xs, ys = zip(*batch)
@@ -62,8 +63,8 @@ class MultiSTFTNpyDataset(Dataset):
         self.label_map = {label: i for i, label in enumerate(LABELS)}
 
         # Define the expected spectrogram files for each audio
-        self.band_ranges = ["0-1000Hz", "1000-4000Hz", "4000-11025Hz"]
-        self.n_ffts = [256, 512, 1024]
+        self.band_ranges = band_ranges
+        self.n_ffts = n_ffts
 
     def __len__(self):
         return len(self.dirs)

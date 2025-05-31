@@ -6,12 +6,13 @@ Usage:
     python data/preprocess.py --in_dir data/raw/IRMAS --out_dir data/processed
 """
 import argparse, librosa, numpy as np, pathlib, tqdm, yaml, os
+from var import n_ffts, band_ranges_as_tuples
 
 def generate_multi_stft(
     y: np.ndarray,
     sr: int,
-    n_ffts=(256, 512, 1024),
-    band_ranges=((0, 1000), (1000, 4000), (4000, 11025))
+    n_ffts=n_ffts,
+    band_ranges=band_ranges_as_tuples
 ):
     """
     Generates 9 spectrograms: 3 window sizes × 3 frequency bands.
