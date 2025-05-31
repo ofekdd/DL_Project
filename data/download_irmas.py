@@ -6,7 +6,9 @@
 Example:
     python data/download_irmas.py --out_dir data/raw
 """
-import argparse, hashlib, os, tarfile, urllib.request, sys, pathlib
+from __future__ import annotations
+
+import argparse, hashlib, urllib.request, sys, pathlib
 
 IRMAS_URL = "https://zenodo.org/record/1290750/files/IRMAS-TrainingData.zip?download=1"
 MD5       = "4fd9f5ed5a18d8e2687e6360b5f60afe"  # expected archive checksum
