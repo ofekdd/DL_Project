@@ -2,28 +2,31 @@
 #!/usr/bin/env python3
 """CLI inference """
 import argparse, yaml, torch, librosa, numpy as np, pathlib
-from models import CNNBaseline, ResNetSpec
+from models.multi_stft_cnn import MultiSTFTCNN
 from data.preprocess import generate_multi_stft
-
-LABELS = ["cello","clarinet","flute","acoustic_guitar","organ","piano","saxophone","trumpet","violin","voice","other"]
+from data.dataset import LABELS
 
 def extract_features(path, cfg):
     y, sr = librosa.load(path, sr=cfg['sample_rate'], mono=True)
     specs_dict = generate_multi_stft(y, sr)
 
-    # For inference, we'll use the middle frequency band (1000-4000Hz) with the middle FFT size (512)
-    # This is a simplification - in a real application, you might want to use all bands and FFT sizes
-    # TODO: we need to update this for the new preprocessed data
-    key= ("1000-4000Hz", 512)
+    # For MultiSTFTCNN, we need all 9 spectrograms (3 window sizes × 3 frequency bands)
+    # Convert each spectrogram to a tensor with shape (1, 1, F, T)
+    specs_list = []
+    for n_fft in (256, 512, 1024):
+        for band_range in ("0-1000Hz", "1000-4000Hz", "4000-11025Hz"):
+            key = (band_range, n_fft)
+            if key in specs_dict:
+                spec = specs_dict[key]
+                specs_list.append(torch.tensor(spec).unsqueeze(0).unsqueeze(0))
+            else:
+                # If a specific spectrogram is missing, use a zero tensor of appropriate shape
+                # This is a fallback and should be rare
+                print(f"Warning: Missing spectrogram for {key}")
+                # Use a small dummy tensor as fallback
+                specs_list.append(torch.zeros(1, 1, 10, 10))
 
-    if key in specs_dict:
-        spec = specs_dict[key]
-        return torch.tensor(spec).unsqueeze(0).unsqueeze(0)
-    else:
-        # Fallback to the first available spectrogram if the preferred one is not available
-        first_key = list(specs_dict.keys())[0]
-        spec = specs_dict[first_key]
-        return torch.tensor(spec).unsqueeze(0).unsqueeze(0)
+    return specs_list
 
 def predict(model, wav_path, cfg):
     model.eval()
@@ -34,10 +37,8 @@ def predict(model, wav_path, cfg):
 
 def main(ckpt, wav, config):
     cfg = yaml.safe_load(open(config))
-    if cfg.get("model_name") == "resnet34":
-        model = ResNetSpec(len(LABELS))
-    else:
-        model = CNNBaseline(len(LABELS))
+    # Using MultiSTFTCNN model directly as specified
+    model = MultiSTFTCNN(n_classes=len(LABELS))
     model.load_state_dict(torch.load(ckpt, map_location="cpu")["state_dict"])
     results = predict(model, wav, cfg)
     print(results)
