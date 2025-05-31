@@ -4,8 +4,7 @@
 import argparse, yaml, torch, librosa, numpy as np, pathlib
 from models.multi_stft_cnn import MultiSTFTCNN
 from data.preprocess import generate_multi_stft
-from data.dataset import LABELS
-from var import n_ffts, band_ranges
+from var import n_ffts, band_ranges, LABELS
 
 
 def extract_features(path, cfg):
@@ -13,20 +12,30 @@ def extract_features(path, cfg):
     specs_dict = generate_multi_stft(y, sr)
 
     # For MultiSTFTCNN, we need all 9 spectrograms (3 window sizes × 3 frequency bands)
-    # Convert each spectrogram to a tensor with shape (1, 1, F, T)
-    specs_list = []
+    # First, collect all spectrograms
+    raw_specs = []
     for n_fft in n_ffts:
         for band_range in band_ranges:
             key = (band_range, n_fft)
             if key in specs_dict:
                 spec = specs_dict[key]
-                specs_list.append(torch.tensor(spec).unsqueeze(0).unsqueeze(0))
+                spec_tensor = torch.tensor(spec).unsqueeze(0)  # [1, F, T]
+                raw_specs.append(spec_tensor)
             else:
                 # If a specific spectrogram is missing, use a zero tensor of appropriate shape
                 # This is a fallback and should be rare
                 print(f"Warning: Missing spectrogram for {key}")
                 # Use a small dummy tensor as fallback
-                specs_list.append(torch.zeros(1, 1, 10, 10))
+                raw_specs.append(torch.zeros(1, 10, 10))
+
+    # Ensure each spectrogram has reasonable dimensions
+    # For inference with a single sample, we don't need to pad to match other samples
+    # But we should ensure each spectrogram has appropriate dimensions
+    specs_list = []
+    for spec in raw_specs:
+        # Add batch dimension (batch, channel, freq, time)
+        spec_tensor = spec.unsqueeze(0)  # [1, 1, F, T]
+        specs_list.append(spec_tensor)
 
     return specs_list
 

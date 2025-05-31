@@ -6,7 +6,8 @@ from torchmetrics import MetricCollection
 from models.multi_stft_cnn import MultiSTFTCNN
 from training.callbacks import default_callbacks
 from training.metrics import MetricCollection
-from data.dataset import create_dataloaders, LABELS
+from data.dataset import create_dataloaders
+from var import LABELS
 
 class LitModel(pl.LightningModule):
     def __init__(self, cfg):
