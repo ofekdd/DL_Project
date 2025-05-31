@@ -1,6 +1,7 @@
 
 #!/usr/bin/env python3
 """Entry point for training."""
+# TODO: this is all weird, do it again
 import pytorch_lightning as pl, torch, yaml, argparse, pathlib
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose

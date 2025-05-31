@@ -13,7 +13,9 @@ def extract_features(path, cfg):
 
     # For inference, we'll use the middle frequency band (1000-4000Hz) with the middle FFT size (512)
     # This is a simplification - in a real application, you might want to use all bands and FFT sizes
-    key = ("1000-4000Hz", 512)
+    # TODO: we need to update this for the new preprocessed data
+    key= ("1000-4000Hz", 512)
+
     if key in specs_dict:
         spec = specs_dict[key]
         return torch.tensor(spec).unsqueeze(0).unsqueeze(0)

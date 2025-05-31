@@ -1,4 +1,5 @@
 
+# TODO: modify to use mounted drive if available
 #!/usr/bin/env python3
 """Download the IRMAS dataset (≈2 GB) and extract it.
 
@@ -40,6 +41,20 @@ def main(out_dir: str):
     with zipfile.ZipFile(archive_path) as zf:
         zf.extractall(out_dir)
     print("Done. Data at", out_dir)
+
+def find_irmas_root() -> pathlib.Path | None:
+    """Return the first existing path that contains IRMAS WAVs."""
+    candidates = [
+        pathlib.Path("/content/IRMAS/IRMAS-TrainingData"),   # Colab scratch
+        pathlib.Path("data/raw/IRMAS/IRMAS-TrainingData"),   # legacy
+        pathlib.Path("data/raw/IRMAS-TrainingData"),         # legacy alt
+        pathlib.Path("data/raw"),                            # fallback
+    ]
+    for p in candidates:
+        if p.exists() and any(p.rglob("*.wav")):
+            return p
+    return None
+
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
