@@ -1,1 +1,11 @@
-# TODO: write proper configuration
+# 9CNN model configuration
+model_name: 9cnn
+sample_rate: 22050
+n_mels: 64
+hop_length: 512
+batch_size: 8  # Smaller batch size due to higher memory requirements
+num_epochs: 50
+learning_rate: 2e-4  # Adjusted learning rate for 9CNN
+num_workers: 4
+n_branches: 9  # Number of branches in the 9CNN model (3 window sizes × 3 frequency bands)
+branch_output_dim: 128  # Output dimension of each branch

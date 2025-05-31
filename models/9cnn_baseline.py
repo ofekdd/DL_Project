@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class STFTBranch(nn.Module):
     """One CNN branch that adapts to input shape."""
@@ -12,8 +11,8 @@ class STFTBranch(nn.Module):
             nn.Conv2d(32, 64, kernel_size=3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
             nn.MaxPool2d(2),
             nn.Conv2d(64, out_features, kernel_size=3, padding=1), nn.BatchNorm2d(out_features), nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),  # Shape: (B, out_features, 1, 1)
-            nn.Flatten()  # → (B, out_features)
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten()
         )
 
     def forward(self, x):
@@ -37,13 +36,3 @@ class MultiSTFTCNN(nn.Module):
         features = [branch(x) for branch, x in zip(self.branches, x_list)]
         combined = torch.cat(features, dim=1)  # shape: (B, 9 * 128)
         return self.classifier(combined)
-
-
-
-#model = MultiSTFTCNN(n_classes=11)
-#outputs = model([
-#    torch.randn(8, 1, 22, 500),  # example STFT 1
-#    torch.randn(8, 1, 40, 400),  # example STFT 2
-#    # ... more STFTs ...
-#    torch.randn(8, 1, 50, 300),  # STFT 9
-#])
