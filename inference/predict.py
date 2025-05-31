@@ -49,6 +49,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("ckpt")
     p.add_argument("wav")
-    p.add_argument("--config", default="configs/default.yaml")
+    p.add_argument("--config", default="configs/multi_stft_cnn.yaml")
     args = p.parse_args()
     main(args.ckpt, args.wav, args.config)

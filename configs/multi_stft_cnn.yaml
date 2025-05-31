@@ -1,5 +1,5 @@
 # 9CNN model configuration
-model_name: 9cnn
+model_name: multi_stft_cnn
 sample_rate: 22050
 n_mels: 64
 hop_length: 512
