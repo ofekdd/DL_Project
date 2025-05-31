@@ -49,6 +49,58 @@ def process_file(wav_path, cfg):
     y, sr = librosa.load(wav_path, sr=cfg['sample_rate'], mono=True)
     return generate_multi_stft(y, sr)
 
+def preprocess_data(in_dir, out_dir, cfg):
+    in_dir, out_dir = pathlib.Path(in_dir), pathlib.Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create train and validation directories
+    train_dir = out_dir / 'train'
+    val_dir = out_dir / 'val'
+    train_dir.mkdir(exist_ok=True)
+    val_dir.mkdir(exist_ok=True)
+
+    # Get all WAV files
+    wav_files = list(in_dir.rglob("*.wav"))
+    print(f"Found {len(wav_files)} WAV files")
+
+    # Split into train and validation sets (90/10 split)
+    np.random.shuffle(wav_files)
+    split_idx = int(len(wav_files) * 0.9)
+    train_files = wav_files[:split_idx]
+    val_files = wav_files[split_idx:]
+
+    # Process training files
+    print("Processing training files...")
+    for wav in tqdm.tqdm(train_files):
+        specs_dict = process_file(wav, cfg)
+
+        # Create a directory for this audio file
+        rel_dir = wav.relative_to(in_dir).with_suffix("")
+        file_out_dir = train_dir / rel_dir
+        file_out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save each spectrogram with band and FFT size information in the filename
+        for (band_label, n_fft), spec in specs_dict.items():
+            spec_filename = f"{band_label}_fft{n_fft}.npy"
+            np.save(file_out_dir / spec_filename, spec)
+
+    # Process validation files
+    print("Processing validation files...")
+    for wav in tqdm.tqdm(val_files):
+        specs_dict = process_file(wav, cfg)
+
+        # Create a directory for this audio file
+        rel_dir = wav.relative_to(in_dir).with_suffix("")
+        file_out_dir = val_dir / rel_dir
+        file_out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save each spectrogram with band and FFT size information in the filename
+        for (band_label, n_fft), spec in specs_dict.items():
+            spec_filename = f"{band_label}_fft{n_fft}.npy"
+            np.save(file_out_dir / spec_filename, spec)
+
+    print(f"Processed {len(train_files)} training files and {len(val_files)} validation files")
+
 def main(in_dir, out_dir, config):
     in_dir, out_dir = pathlib.Path(in_dir), pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
