@@ -1,5 +1,4 @@
-
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 """Entry point for training."""
 import pytorch_lightning as pl, torch, yaml, argparse
 from torchmetrics import MetricCollection
@@ -8,6 +7,7 @@ from training.callbacks import default_callbacks
 from training.metrics import MetricCollection
 from data.dataset import create_dataloaders
 from var import LABELS
+
 
 class LitModel(pl.LightningModule):
     def __init__(self, cfg):
@@ -33,15 +33,17 @@ class LitModel(pl.LightningModule):
         loss = torch.nn.functional.binary_cross_entropy(preds, y_float)
         # Keep y as long for metrics
         metrics = self.metrics(preds, y)
-        self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}":v for k,v in metrics.items()}},
-                       prog_bar=True)
+        self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}},
+                      prog_bar=True)
         return loss
 
     def training_step(self, batch, _):  return self.common_step(batch, "train")
-    def validation_step(self, batch, _):return self.common_step(batch, "val")
+
+    def validation_step(self, batch, _): return self.common_step(batch, "val")
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
+
 
 def main(config):
     # Handle both file path and dictionary inputs
@@ -50,10 +52,18 @@ def main(config):
     else:
         with open(config, 'r') as f:
             cfg = yaml.safe_load(f)
+
+    # Get train and val directories from config, with fallback to default paths
+    train_dir = cfg.get('train_dir', "data/processed/train")
+    val_dir = cfg.get('val_dir', "data/processed/val")
+
+    print(f"Using train_dir: {train_dir}")
+    print(f"Using val_dir: {val_dir}")
+
     # Use the create_dataloaders function with use_multi_stft=True
     train_loader, val_loader = create_dataloaders(
-        train_dir="data/processed/train",
-        val_dir="data/processed/val",
+        train_dir=train_dir,
+        val_dir=val_dir,
         batch_size=cfg['batch_size'],
         num_workers=cfg['num_workers'],
         use_multi_stft=True,  # Use MultiSTFTNpyDataset for MultiSTFTCNN model
@@ -66,6 +76,7 @@ def main(config):
         accelerator="auto"
     )
     trainer.fit(model, train_loader, val_loader)
+
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
