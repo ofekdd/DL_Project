@@ -62,13 +62,24 @@ class MultiSTFTNpyDataset(Dataset):
     """
 
     def __init__(self, root, max_samples=None):
+        # Handle string "None" from YAML config or convert string numbers to int
+        if isinstance(max_samples, str):
+            if max_samples.lower() == 'none':
+                max_samples = None
+            else:
+                try:
+                    max_samples = int(max_samples)
+                except ValueError:
+                    print(f"Warning: Could not convert max_samples '{max_samples}' to int, using None")
+                    max_samples = None
+
         # Get all directories (each directory corresponds to one audio file)
         self.dirs = list(set(file.parent for file in pathlib.Path(root).rglob("*.npy")))
 
         print(f"Found {len(self.dirs)} total sample directories in {root}")
 
         # Limit the number of samples if max_samples is specified
-        if max_samples is not None and max_samples > 0 and max_samples < len(self.dirs):
+        if max_samples is not None and isinstance(max_samples, int) and max_samples > 0 and max_samples < len(self.dirs):
             self.dirs = self.dirs[:max_samples]
             print(f"Limited to {max_samples} samples")
 
