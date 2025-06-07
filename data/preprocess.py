@@ -118,13 +118,30 @@ def preprocess_mixed_data(irmas_root, mixed_dataset, out_dir, cfg, original_data
     if original_data_percentage > 0:
         print(f"Using {original_data_percentage * 100:.1f}% of original IRMAS data (from config)")
 
-        irmas_path = Path(irmas_root) / "IRMAS-TrainingData"
+        # FIX: Check if irmas_root already contains the training data directory
+        irmas_root_path = Path(irmas_root)
 
-        if irmas_path.exists():
+        # Try different possible paths
+        possible_paths = [
+            irmas_root_path,  # Direct path to training data
+            irmas_root_path / "IRMAS-TrainingData",  # Append training data folder
+            irmas_root_path.parent / "IRMAS-TrainingData",  # Go up one level
+        ]
+
+        irmas_path = None
+        for candidate_path in possible_paths:
+            print(f"Checking path: {candidate_path}")
+            if candidate_path.exists() and any(candidate_path.rglob("*.wav")):
+                irmas_path = candidate_path
+                print(f"✅ Found IRMAS training data at: {irmas_path}")
+                break
+
+        if irmas_path and irmas_path.exists():
             print("Processing original IRMAS data...")
 
             # Get all WAV files
             wav_files = list(irmas_path.rglob("*.wav"))
+            print(f"Found {len(wav_files)} WAV files in {irmas_path}")
 
             # Apply percentage filter
             if original_data_percentage < 1.0:
@@ -156,7 +173,7 @@ def preprocess_mixed_data(irmas_root, mixed_dataset, out_dir, cfg, original_data
                 print(f"Processing {len(files)} original {split_name} files...")
                 split_dir = out_dir / split_name
 
-                for i, wav_file in enumerate(tqdm(files)):
+                for i, wav_file in enumerate(tqdm(files, desc=f"Processing {split_name} original files")):
                     try:
                         # Load audio
                         y, sr = librosa.load(wav_file, sr=cfg['sample_rate'], mono=True)
@@ -182,7 +199,10 @@ def preprocess_mixed_data(irmas_root, mixed_dataset, out_dir, cfg, original_data
                         print(f"Error processing {wav_file}: {e}")
                         continue
         else:
-            print(f"Warning: IRMAS training data not found at {irmas_path}")
+            print(f"❌ Error: IRMAS training data not found!")
+            print(f"   Searched paths:")
+            for p in possible_paths:
+                print(f"     {p} - {'EXISTS' if p.exists() else 'NOT FOUND'}")
 
     # ============================================================================
     # 2. PROCESS MIXED MULTI-LABEL DATA
