@@ -6,6 +6,6 @@ hop_length: 512
 batch_size: 8  # Smaller batch size due to higher memory requirements
 num_epochs: 1
 learning_rate: 2e-4  # Adjusted learning rate for 9CNN
-num_workers: 4
+num_workers: 2
 n_branches: 9  # Number of branches in the 9CNN model (3 window sizes × 3 frequency bands)
 branch_output_dim: 128  # Output dimension of each branch
