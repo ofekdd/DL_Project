@@ -85,7 +85,7 @@ def process_mixed_audio(audio_tensor, labels, cfg, sample_id):
 
 def preprocess_mixed_data(irmas_root, mixed_dataset, out_dir, cfg):
     """
-    Preprocess both original IRMAS data and mixed multi-label data.
+    Preprocess both original IRMAS data and mixed multi-label data with 80/10/10 split.
 
     Args:
         irmas_root: Path to original IRMAS dataset
@@ -96,8 +96,12 @@ def preprocess_mixed_data(irmas_root, mixed_dataset, out_dir, cfg):
     out_dir = pathlib.Path(out_dir)
     train_dir = out_dir / 'train'
     val_dir = out_dir / 'val'
+    test_dir = out_dir / 'test'  # Add test directory
+    
+    # Create all directories
     train_dir.mkdir(parents=True, exist_ok=True)
     val_dir.mkdir(parents=True, exist_ok=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
 
     # First, process original IRMAS data (single-label)
     print("Processing original IRMAS data...")
@@ -105,23 +109,24 @@ def preprocess_mixed_data(irmas_root, mixed_dataset, out_dir, cfg):
     wav_files = list(irmas_path.rglob("*.wav"))
 
     if wav_files:
-        # Split original data into train and validation (90/10 split)
+        # Split original data into train/val/test (80/10/10 split)
         np.random.shuffle(wav_files)
-        split_idx = int(len(wav_files) * 0.9)
-        train_files = wav_files[:split_idx]
-        val_files = wav_files[split_idx:]
+        train_split = int(len(wav_files) * 0.8)
+        val_split = int(len(wav_files) * 0.9)
+        
+        train_files = wav_files[:train_split]
+        val_files = wav_files[train_split:val_split]
+        test_files = wav_files[val_split:]
+
+        print(f"Original data split: {len(train_files)} train, {len(val_files)} val, {len(test_files)} test")
 
         # Process training files
         print(f"Processing {len(train_files)} original training files...")
         for wav in tqdm.tqdm(train_files):
             specs_dict = process_file(wav, cfg)
-
-            # Create a directory for this audio file
             rel_dir = wav.relative_to(irmas_path).with_suffix("")
             file_out_dir = train_dir / rel_dir
             file_out_dir.mkdir(parents=True, exist_ok=True)
-
-            # Save each spectrogram
             for (band_label, n_fft), spec in specs_dict.items():
                 spec_filename = f"{band_label}_fft{n_fft}.npy"
                 np.save(file_out_dir / spec_filename, spec)
@@ -130,101 +135,115 @@ def preprocess_mixed_data(irmas_root, mixed_dataset, out_dir, cfg):
         print(f"Processing {len(val_files)} original validation files...")
         for wav in tqdm.tqdm(val_files):
             specs_dict = process_file(wav, cfg)
-
-            # Create a directory for this audio file
             rel_dir = wav.relative_to(irmas_path).with_suffix("")
             file_out_dir = val_dir / rel_dir
             file_out_dir.mkdir(parents=True, exist_ok=True)
-
-            # Save each spectrogram
             for (band_label, n_fft), spec in specs_dict.items():
                 spec_filename = f"{band_label}_fft{n_fft}.npy"
                 np.save(file_out_dir / spec_filename, spec)
 
-    # Now, process mixed data (multi-label)
-    print(f"\nProcessing {len(mixed_dataset)} mixed multi-label samples...")
+        # Process test files
+        print(f"Processing {len(test_files)} original test files...")
+        for wav in tqdm.tqdm(test_files):
+            specs_dict = process_file(wav, cfg)
+            rel_dir = wav.relative_to(irmas_path).with_suffix("")
+            file_out_dir = test_dir / rel_dir
+            file_out_dir.mkdir(parents=True, exist_ok=True)
+            for (band_label, n_fft), spec in specs_dict.items():
+                spec_filename = f"{band_label}_fft{n_fft}.npy"
+                np.save(file_out_dir / spec_filename, spec)
 
-    # Split mixed data into train and validation (90/10 split)
+    # Now, process mixed data (multi-label) with same 80/10/10 split
+    print(f"\nProcessing {len(mixed_dataset)} mixed multi-label samples...")
     np.random.shuffle(mixed_dataset)
-    split_idx = int(len(mixed_dataset) * 0.9)
-    train_mixed = mixed_dataset[:split_idx]
-    val_mixed = mixed_dataset[split_idx:]
+    
+    train_mixed_split = int(len(mixed_dataset) * 0.8)
+    val_mixed_split = int(len(mixed_dataset) * 0.9)
+    
+    train_mixed = mixed_dataset[:train_mixed_split]
+    val_mixed = mixed_dataset[train_mixed_split:val_mixed_split]
+    test_mixed = mixed_dataset[val_mixed_split:]
+
+    print(f"Mixed data split: {len(train_mixed)} train, {len(val_mixed)} val, {len(test_mixed)} test")
 
     # Process mixed training data
-    print(f"Processing {len(train_mixed)} mixed training samples...")
     for i, (audio_tensor, labels) in enumerate(tqdm.tqdm(train_mixed)):
         specs_dict, labels_dict = process_mixed_audio(audio_tensor, labels, cfg, f"mixed_train_{i}")
-
-        # Create directory for this mixed sample
         active_labels_str = "_".join(labels_dict['active_labels'])
         file_out_dir = train_dir / f"mixed_{i}_{active_labels_str}"
         file_out_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save spectrograms
         for (band_label, n_fft), spec in specs_dict.items():
             spec_filename = f"{band_label}_fft{n_fft}.npy"
             np.save(file_out_dir / spec_filename, spec)
-
-        # Save labels information
         np.save(file_out_dir / "labels.npy", labels_dict['multi_label_vector'])
 
     # Process mixed validation data
-    print(f"Processing {len(val_mixed)} mixed validation samples...")
     for i, (audio_tensor, labels) in enumerate(tqdm.tqdm(val_mixed)):
         specs_dict, labels_dict = process_mixed_audio(audio_tensor, labels, cfg, f"mixed_val_{i}")
-
-        # Create directory for this mixed sample
         active_labels_str = "_".join(labels_dict['active_labels'])
         file_out_dir = val_dir / f"mixed_{i}_{active_labels_str}"
         file_out_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save spectrograms
         for (band_label, n_fft), spec in specs_dict.items():
             spec_filename = f"{band_label}_fft{n_fft}.npy"
             np.save(file_out_dir / spec_filename, spec)
-
-        # Save labels information
         np.save(file_out_dir / "labels.npy", labels_dict['multi_label_vector'])
 
-    print(f"✅ Preprocessing complete!")
-    print(
-        f"   Original data: {len(train_files) if 'train_files' in locals() else 0} train + {len(val_files) if 'val_files' in locals() else 0} val")
-    print(f"   Mixed data: {len(train_mixed)} train + {len(val_mixed)} val")
-    print(
-        f"   Total: {(len(train_files) if 'train_files' in locals() else 0) + len(train_mixed)} train + {(len(val_files) if 'val_files' in locals() else 0) + len(val_mixed)} val")
+    # Process mixed test data
+    for i, (audio_tensor, labels) in enumerate(tqdm.tqdm(test_mixed)):
+        specs_dict, labels_dict = process_mixed_audio(audio_tensor, labels, cfg, f"mixed_test_{i}")
+        active_labels_str = "_".join(labels_dict['active_labels'])
+        file_out_dir = test_dir / f"mixed_{i}_{active_labels_str}"
+        file_out_dir.mkdir(parents=True, exist_ok=True)
+        for (band_label, n_fft), spec in specs_dict.items():
+            spec_filename = f"{band_label}_fft{n_fft}.npy"
+            np.save(file_out_dir / spec_filename, spec)
+        np.save(file_out_dir / "labels.npy", labels_dict['multi_label_vector'])
+
+    print(f"✅ Preprocessing complete with 80/10/10 split!")
+    print(f"   Original data: {len(train_files) if 'train_files' in locals() else 0} train + {len(val_files) if 'val_files' in locals() else 0} val + {len(test_files) if 'test_files' in locals() else 0} test")
+    print(f"   Mixed data: {len(train_mixed)} train + {len(val_mixed)} val + {len(test_mixed)} test")
+    total_train = (len(train_files) if 'train_files' in locals() else 0) + len(train_mixed)
+    total_val = (len(val_files) if 'val_files' in locals() else 0) + len(val_mixed)
+    total_test = (len(test_files) if 'test_files' in locals() else 0) + len(test_mixed)
+    print(f"   Total: {total_train} train + {total_val} val + {total_test} test")
 
 
 def preprocess_data(in_dir, out_dir, cfg):
+    """Standard preprocessing with 80/10/10 split."""
     in_dir, out_dir = pathlib.Path(in_dir), pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create train and validation directories
+    # Create train, validation, and test directories
     train_dir = out_dir / 'train'
     val_dir = out_dir / 'val'
+    test_dir = out_dir / 'test'
+    
     train_dir.mkdir(exist_ok=True)
     val_dir.mkdir(exist_ok=True)
+    test_dir.mkdir(exist_ok=True)
 
     # Get all WAV files
     wav_files = list(in_dir.rglob("*.wav"))
     print(f"Found {len(wav_files)} WAV files")
 
-    # Split into train and validation sets (90/10 split)
+    # Split into train/val/test sets (80/10/10 split)
     np.random.shuffle(wav_files)
-    split_idx = int(len(wav_files) * 0.9)
-    train_files = wav_files[:split_idx]
-    val_files = wav_files[split_idx:]
+    train_split = int(len(wav_files) * 0.8)
+    val_split = int(len(wav_files) * 0.9)
+    
+    train_files = wav_files[:train_split]
+    val_files = wav_files[train_split:val_split]
+    test_files = wav_files[val_split:]
+
+    print(f"Data split: {len(train_files)} train, {len(val_files)} val, {len(test_files)} test")
 
     # Process training files
     print("Processing training files...")
     for wav in tqdm.tqdm(train_files):
         specs_dict = process_file(wav, cfg)
-
-        # Create a directory for this audio file
         rel_dir = wav.relative_to(in_dir).with_suffix("")
         file_out_dir = train_dir / rel_dir
         file_out_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save each spectrogram with band and FFT size information in the filename
         for (band_label, n_fft), spec in specs_dict.items():
             spec_filename = f"{band_label}_fft{n_fft}.npy"
             np.save(file_out_dir / spec_filename, spec)
@@ -233,18 +252,25 @@ def preprocess_data(in_dir, out_dir, cfg):
     print("Processing validation files...")
     for wav in tqdm.tqdm(val_files):
         specs_dict = process_file(wav, cfg)
-
-        # Create a directory for this audio file
         rel_dir = wav.relative_to(in_dir).with_suffix("")
         file_out_dir = val_dir / rel_dir
         file_out_dir.mkdir(parents=True, exist_ok=True)
-
-        # Save each spectrogram with band and FFT size information in the filename
         for (band_label, n_fft), spec in specs_dict.items():
             spec_filename = f"{band_label}_fft{n_fft}.npy"
             np.save(file_out_dir / spec_filename, spec)
 
-    print(f"Processed {len(train_files)} training files and {len(val_files)} validation files")
+    # Process test files
+    print("Processing test files...")
+    for wav in tqdm.tqdm(test_files):
+        specs_dict = process_file(wav, cfg)
+        rel_dir = wav.relative_to(in_dir).with_suffix("")
+        file_out_dir = test_dir / rel_dir
+        file_out_dir.mkdir(parents=True, exist_ok=True)
+        for (band_label, n_fft), spec in specs_dict.items():
+            spec_filename = f"{band_label}_fft{n_fft}.npy"
+            np.save(file_out_dir / spec_filename, spec)
+
+    print(f"✅ Processed {len(train_files)} training, {len(val_files)} validation, and {len(test_files)} test files")
 
 
 def main(in_dir, out_dir, config):
