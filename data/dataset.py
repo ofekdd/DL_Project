@@ -79,12 +79,44 @@ class MultiSTFTNpyDataset(Dataset):
         audio_dir = self.dirs[idx]
 
         # Parse label from folder name
-        label_str = audio_dir.name.split("_")[0]
         y = torch.zeros(len(LABELS), dtype=torch.long)
 
-        # Map label string to index
-        if label_str in self.label_map:
-            y[self.label_map[label_str]] = 1
+        # Handle both original and mixed sample naming
+        folder_name = audio_dir.name
+
+        if folder_name.startswith("mixed_"):
+            # Handle mixed samples: e.g., "mixed_3_piano" or "mixed_68_trumpet_voice"
+            # Extract everything after "mixed_X_"
+            parts = folder_name.split("_")
+            if len(parts) >= 3:
+                # Extract instrument labels (everything after the ID)
+                instrument_parts = parts[2:]  # Skip "mixed" and the ID number
+
+                # Handle multiple instruments separated by underscores
+                # This assumes instrument names don't contain underscores
+                current_instrument = ""
+                for part in instrument_parts:
+                    if current_instrument:
+                        current_instrument += "_" + part
+                    else:
+                        current_instrument = part
+
+                    # Check if we have a complete instrument name
+                    if current_instrument in self.label_map:
+                        y[self.label_map[current_instrument]] = 1
+                        current_instrument = ""  # Reset for next instrument
+                    elif part in self.label_map:
+                        y[self.label_map[part]] = 1
+                        current_instrument = ""
+
+                # Handle any remaining partial instrument name
+                if current_instrument and current_instrument in self.label_map:
+                    y[self.label_map[current_instrument]] = 1
+        else:
+            # Handle original samples: extract the first part as the label
+            label_str = folder_name.split("_")[0]
+            if label_str in self.label_map:
+                y[self.label_map[label_str]] = 1
 
         # Load all 9 spectrograms
         specs = []
@@ -105,7 +137,6 @@ class MultiSTFTNpyDataset(Dataset):
                 specs.append(spec_tensor)
 
         return specs, y
-
 def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_stft=True, max_samples=None):
     """
     Create train and validation dataloaders
