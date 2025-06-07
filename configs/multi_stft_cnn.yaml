@@ -9,3 +9,7 @@ learning_rate: 2e-4  # Adjusted learning rate for 9CNN
 num_workers: 2
 n_branches: 9  # Number of branches in the 9CNN model (3 window sizes × 3 frequency bands)
 branch_output_dim: 128  # Output dimension of each branch
+
+# Training efficiency settings
+limit_val_batches: 0.1  # Use only 10% of validation data for faster training (1.0 = 100%)
+num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup

@@ -69,12 +69,27 @@ def main(config):
         use_multi_stft=True,  # Use MultiSTFTNpyDataset for MultiSTFTCNN model
         max_samples=cfg.get('max_samples', None)  # Limit number of samples if specified
     )
+
     model = LitModel(cfg)
-    trainer = pl.Trainer(
-        max_epochs=cfg['num_epochs'],
-        callbacks=default_callbacks(),
-        accelerator="auto"
-    )
+
+    # Configure trainer with validation efficiency settings from config
+    trainer_kwargs = {
+        'max_epochs': cfg['num_epochs'],
+        'callbacks': default_callbacks(),
+        'accelerator': "auto",
+    }
+
+    # Add validation efficiency settings if specified in config
+    if 'limit_val_batches' in cfg:
+        trainer_kwargs['limit_val_batches'] = cfg['limit_val_batches']
+        print(
+            f"🎛️  Limiting validation to {cfg['limit_val_batches'] * 100 if cfg['limit_val_batches'] <= 1 else cfg['limit_val_batches']}{'%' if cfg['limit_val_batches'] <= 1 else ' batches'}")
+
+    if 'num_sanity_val_steps' in cfg:
+        trainer_kwargs['num_sanity_val_steps'] = cfg['num_sanity_val_steps']
+        print(f"🎛️  Using {cfg['num_sanity_val_steps']} sanity validation steps")
+
+    trainer = pl.Trainer(**trainer_kwargs)
     trainer.fit(model, train_loader, val_loader)
 
 
