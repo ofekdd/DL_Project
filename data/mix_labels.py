@@ -5,18 +5,22 @@ import pathlib
 from var import LABELS
 
 
-def load_irmas_audio_dataset(irmas_root, cfg, max_samples=100):
+def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
     """
     Load raw audio files from IRMAS dataset into a list of (audio_tensor, label_vector) tuples
 
     Args:
         irmas_root: Path to IRMAS dataset root directory
         cfg: Configuration dictionary containing sample_rate
-        max_samples: Maximum number of samples to load (None for all)
+        max_samples: Maximum number of samples to load (None to use config value)
 
     Returns:
         List of (audio_tensor, label_vector) tuples
     """
+    # Use config value if max_samples not explicitly provided
+    if max_samples is None:
+        max_samples = cfg.get('max_original_samples', 100)
+
     irmas_path = pathlib.Path(irmas_root) / "IRMAS-TrainingData"
 
     if not irmas_path.exists():
@@ -84,22 +88,38 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=100):
     return dataset
 
 
-def create_multilabel_dataset(irmas_root, cfg, max_original_samples=8000, num_mixtures=1000,
-                              min_instruments=1, max_instruments=2):
+def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mixtures=None,
+                              min_instruments=None, max_instruments=None):
     """
     Create a multi-label dataset by loading IRMAS data and creating synthetic mixtures.
 
     Args:
         irmas_root: Path to IRMAS dataset root directory
         cfg: Configuration dictionary
-        max_original_samples: Maximum original samples to load
-        num_mixtures: Number of synthetic mixtures to create
-        min_instruments: Minimum instruments per mixture
-        max_instruments: Maximum instruments per mixture
+        max_original_samples: Maximum original samples to load (None to use config)
+        num_mixtures: Number of synthetic mixtures to create (None to use config)
+        min_instruments: Minimum instruments per mixture (None to use config)
+        max_instruments: Maximum instruments per mixture (None to use config)
 
     Returns:
         Tuple of (original_dataset, mixed_dataset)
     """
+    # Use config values if parameters not explicitly provided
+    if max_original_samples is None:
+        max_original_samples = cfg.get('max_original_samples', 8000)
+    if num_mixtures is None:
+        num_mixtures = cfg.get('num_mixtures', 1000)
+    if min_instruments is None:
+        min_instruments = cfg.get('min_instruments', 1)
+    if max_instruments is None:
+        max_instruments = cfg.get('max_instruments', 2)
+
+    print(f"Creating multilabel dataset with config:")
+    print(f"  max_original_samples: {max_original_samples}")
+    print(f"  num_mixtures: {num_mixtures}")
+    print(f"  min_instruments: {min_instruments}")
+    print(f"  max_instruments: {max_instruments}")
+
     # Load the original single-instrument dataset
     original_dataset = load_irmas_audio_dataset(irmas_root, cfg, max_original_samples)
 
