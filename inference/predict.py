@@ -3,7 +3,7 @@
 import argparse, yaml, torch, librosa, numpy as np, pathlib
 
 from data.preprocess import generate_multi_stft
-from models.multi_stft_cnn_with_stft import MultiSTFTCNN
+from models.multi_stft_cnn import MultiSTFTCNN
 from var import LABELS, n_ffts, band_ranges
 
 

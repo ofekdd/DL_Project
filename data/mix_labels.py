@@ -2,7 +2,7 @@ import torch
 import random
 
 
-def create_synthetic_mixtures(dataset, num_new_samples=1000, min_instruments=2, max_instruments=4):
+def create_synthetic_mixtures(dataset, num_new_samples=1000, min_instruments=1, max_instruments=2):
     """
     Creates synthetic audio mixtures from a dataset of single-instrument samples.
 
