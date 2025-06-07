@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 """CLI inference """
 import argparse, yaml, torch, librosa, numpy as np, pathlib
-from models.multi_stft_cnn import MultiSTFTCNN
+from models.multi_stft_cnn_with_stft import MultiSTFTCNN
 from data.preprocess import generate_multi_stft
 from var import n_ffts, band_ranges, LABELS
 

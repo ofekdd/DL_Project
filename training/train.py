@@ -3,7 +3,7 @@
 """Entry point for training."""
 import pytorch_lightning as pl, torch, yaml, argparse
 from torchmetrics import MetricCollection
-from models.multi_stft_cnn import MultiSTFTCNN
+from models.multi_stft_cnn_with_stft import MultiSTFTCNN
 from training.callbacks import default_callbacks
 from training.metrics import MetricCollection
 from data.dataset import create_dataloaders
