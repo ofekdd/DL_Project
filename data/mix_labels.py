@@ -21,6 +21,16 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
     if max_samples is None:
         max_samples = cfg.get('max_original_samples', 100)
 
+    # Handle string "None" from YAML config
+    if isinstance(max_samples, str) and max_samples.lower() == 'none':
+        max_samples = None
+    elif isinstance(max_samples, str):
+        try:
+            max_samples = int(max_samples)
+        except ValueError:
+            print(f"Warning: Could not convert max_samples '{max_samples}' to int, using None")
+            max_samples = None
+
     irmas_path = pathlib.Path(irmas_root) / "IRMAS-TrainingData"
 
     if not irmas_path.exists():
@@ -48,8 +58,8 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
     # Get all WAV files from the training data
     wav_files = list(irmas_path.rglob("*.wav"))
 
-    # Limit samples if specified
-    if max_samples and len(wav_files) > max_samples:
+    # Limit samples if specified (now safely handles None and integers)
+    if max_samples is not None and isinstance(max_samples, int) and len(wav_files) > max_samples:
         wav_files = random.sample(wav_files, max_samples)
 
     print(f"Loading {len(wav_files)} audio files...")
@@ -113,6 +123,22 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
         min_instruments = cfg.get('min_instruments', 1)
     if max_instruments is None:
         max_instruments = cfg.get('max_instruments', 2)
+
+    # Handle string "None" values from YAML config
+    def convert_config_value(value, default):
+        if isinstance(value, str) and value.lower() == 'none':
+            return None
+        elif isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return default
+        return value
+
+    max_original_samples = convert_config_value(max_original_samples, 8000)
+    num_mixtures = convert_config_value(num_mixtures, 1000)
+    min_instruments = convert_config_value(min_instruments, 1)
+    max_instruments = convert_config_value(max_instruments, 2)
 
     print(f"Creating multilabel dataset with config:")
     print(f"  max_original_samples: {max_original_samples}")
