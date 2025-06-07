@@ -12,7 +12,7 @@ from var import LABELS
 class LitModel(pl.LightningModule):
     def __init__(self, cfg):
         super().__init__()
-        n_classes = LABELS.len()
+        n_classes = len(LABELS)
         # Using MultiSTFTCNN model directly as specified
         self.model = MultiSTFTCNN(
             n_classes=n_classes,
@@ -41,7 +41,11 @@ class LitModel(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
 def main(config):
-    cfg = yaml.safe_load(open(config))
+    # Handle both file path and dictionary inputs
+    if isinstance(config, dict):
+        cfg = config
+    else:
+        cfg = yaml.safe_load(open(config))
     # Use the create_dataloaders function with use_multi_stft=True
     train_loader, val_loader = create_dataloaders(
         train_dir="data/processed/train",
