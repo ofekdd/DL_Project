@@ -80,11 +80,11 @@ class MultiSTFTNpyDataset(Dataset):
 
         # Parse label from folder name
         label_str = audio_dir.name.split("_")[0]
-        y = torch.zeros(len(LABELS))
+        y = torch.zeros(len(LABELS), dtype=torch.long)
 
         # Map label string to index
         if label_str in self.label_map:
-            y[self.label_map[label_str]] = 1.0
+            y[self.label_map[label_str]] = 1
 
         # Load all 9 spectrograms
         specs = []

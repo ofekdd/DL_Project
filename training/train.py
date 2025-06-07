@@ -20,7 +20,7 @@ class LitModel(pl.LightningModule):
             branch_output_dim=cfg.get('branch_output_dim', 128)
         )
         self.metrics = MetricCollection(n_classes)
-        self.lr = cfg["learning_rate"]
+        self.lr = float(cfg["learning_rate"])  # Ensure learning_rate is a float
         self.save_hyperparameters(cfg)
 
     def forward(self, x): return self.model(x)
@@ -28,7 +28,10 @@ class LitModel(pl.LightningModule):
     def common_step(self, batch, stage):
         x, y = batch
         preds = self(x)
-        loss = torch.nn.functional.binary_cross_entropy(preds, y)
+        # Convert y to float for binary_cross_entropy
+        y_float = y.float()
+        loss = torch.nn.functional.binary_cross_entropy(preds, y_float)
+        # Keep y as long for metrics
         metrics = self.metrics(preds, y)
         self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}":v for k,v in metrics.items()}},
                        prog_bar=True)
