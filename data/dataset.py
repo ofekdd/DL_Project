@@ -57,9 +57,14 @@ class MultiSTFTNpyDataset(Dataset):
     """
     Dataset for loading all 9 spectrograms (3 window sizes × 3 frequency bands) for each audio file.
     """
-    def __init__(self, root):
+    def __init__(self, root, max_samples=None):
         # Get all directories (each directory corresponds to one audio file)
         self.dirs = list(set(file.parent for file in pathlib.Path(root).rglob("*.npy")))
+
+        # Limit the number of samples if max_samples is specified
+        if max_samples is not None and max_samples > 0 and max_samples < len(self.dirs):
+            self.dirs = self.dirs[:max_samples]
+
         self.label_map = {label: i for i, label in enumerate(LABELS)}
 
         # Define the expected spectrogram files for each audio
@@ -101,7 +106,7 @@ class MultiSTFTNpyDataset(Dataset):
 
         return specs, y
 
-def create_dataloaders(train_dir, val_dir, batch_size, num_workers):
+def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_stft=True, max_samples=None):
     """
     Create train and validation dataloaders
 
@@ -111,11 +116,12 @@ def create_dataloaders(train_dir, val_dir, batch_size, num_workers):
         batch_size: Batch size
         num_workers: Number of workers for data loading
         use_multi_stft: Whether to use MultiSTFTNpyDataset (for MultiSTFTCNN model)
+        max_samples: Maximum number of samples to use for training (None for all samples)
 
     Returns:
         train_loader, val_loader: DataLoader objects for training and validation
     """
-    train_ds = MultiSTFTNpyDataset(train_dir)
+    train_ds = MultiSTFTNpyDataset(train_dir, max_samples=max_samples)
     val_ds = MultiSTFTNpyDataset(val_dir)
     collate_fn = multi_stft_pad_collate
 

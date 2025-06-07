@@ -48,7 +48,8 @@ def main(config):
         val_dir="data/processed/val",
         batch_size=cfg['batch_size'],
         num_workers=cfg['num_workers'],
-        use_multi_stft=True  # Use MultiSTFTNpyDataset for MultiSTFTCNN model
+        use_multi_stft=True,  # Use MultiSTFTNpyDataset for MultiSTFTCNN model
+        max_samples=cfg.get('max_samples', None)  # Limit number of samples if specified
     )
     model = LitModel(cfg)
     trainer = pl.Trainer(
