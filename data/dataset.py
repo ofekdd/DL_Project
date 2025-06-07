@@ -10,7 +10,7 @@ def pad_collate(batch):
     xs, ys = zip(*batch)
     # find max mel bins in batch
     H = max(x.shape[1] for x in xs)
-    W = max(x.shape[2] for x in xs)      # optional time padding
+    W = max(x.shape[2] for x in xs)  # optional time padding
     padded = []
     for x in xs:
         pad_h = H - x.shape[1]
@@ -18,6 +18,7 @@ def pad_collate(batch):
         x_padded = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h))  # (left, right, top, bottom)
         padded.append(x_padded)
     return torch.stack(padded), torch.stack(ys)
+
 
 def multi_stft_pad_collate(batch):
     """
@@ -53,23 +54,48 @@ def multi_stft_pad_collate(batch):
     # Return the list of padded spectrograms and the stacked labels
     return padded_specs, torch.stack(ys)
 
+
 class MultiSTFTNpyDataset(Dataset):
     """
     Dataset for loading all 9 spectrograms (3 window sizes × 3 frequency bands) for each audio file.
     """
+
     def __init__(self, root, max_samples=None):
         # Get all directories (each directory corresponds to one audio file)
         self.dirs = list(set(file.parent for file in pathlib.Path(root).rglob("*.npy")))
 
+        print(f"Found {len(self.dirs)} total sample directories in {root}")
+
         # Limit the number of samples if max_samples is specified
         if max_samples is not None and max_samples > 0 and max_samples < len(self.dirs):
             self.dirs = self.dirs[:max_samples]
+            print(f"Limited to {max_samples} samples")
 
         self.label_map = {label: i for i, label in enumerate(LABELS)}
 
         # Define the expected spectrogram files for each audio
         self.band_ranges = band_ranges
         self.n_ffts = n_ffts
+
+        # Debug: Check a few sample directories and their labels
+        print(f"Dataset initialization complete. Final dataset size: {len(self.dirs)}")
+        if len(self.dirs) > 0:
+            print("Sample directories:")
+            for i, dir_path in enumerate(self.dirs[:3]):
+                print(f"  {i}: {dir_path.name}")
+                # Test label parsing
+                try:
+                    folder_name = dir_path.name
+                    if folder_name.startswith("mixed_"):
+                        print(f"    -> Mixed sample detected")
+                    else:
+                        label_str = folder_name.split("_")[0]
+                        if label_str in self.label_map:
+                            print(f"    -> Original sample, label: {label_str}")
+                        else:
+                            print(f"    -> Unknown label: {label_str}")
+                except Exception as e:
+                    print(f"    -> Error parsing label: {e}")
 
     def __len__(self):
         return len(self.dirs)
@@ -120,6 +146,7 @@ class MultiSTFTNpyDataset(Dataset):
 
         # Load all 9 spectrograms
         specs = []
+        missing_files = 0
         for band_range in self.band_ranges:
             for n_fft in self.n_ffts:
                 spec_path = audio_dir / f"{band_range}_fft{n_fft}.npy"
@@ -131,12 +158,22 @@ class MultiSTFTNpyDataset(Dataset):
                     # If a specific spectrogram is missing, use a zero tensor of appropriate shape
                     # This is a fallback and should be rare
                     print(f"Warning: Missing spectrogram for {spec_path}")
+                    missing_files += 1
                     # Use a small dummy tensor as fallback
                     spec_tensor = torch.zeros(1, 10, 10)
 
                 specs.append(spec_tensor)
 
+        # Debug: Check if we have any valid labels
+        if y.sum() == 0:
+            print(f"Warning: No valid labels found for {folder_name}")
+
+        if missing_files > 0:
+            print(f"Warning: {missing_files}/9 spectrograms missing for {folder_name}")
+
         return specs, y
+
+
 def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_stft=True, max_samples=None):
     """
     Create train and validation dataloaders
@@ -152,23 +189,32 @@ def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_st
     Returns:
         train_loader, val_loader: DataLoader objects for training and validation
     """
+    print(f"Creating training dataset with max_samples={max_samples}")
     train_ds = MultiSTFTNpyDataset(train_dir, max_samples=max_samples)
+    print(f"Training dataset size: {len(train_ds)}")
+
+    print(f"Creating validation dataset...")
     val_ds = MultiSTFTNpyDataset(val_dir)
+    print(f"Validation dataset size: {len(val_ds)}")
+
     collate_fn = multi_stft_pad_collate
 
+    if len(train_ds) == 0:
+        raise ValueError("Training dataset is empty! Check your data preprocessing and label parsing.")
+
     train_loader = DataLoader(
-        train_ds, 
-        batch_size=batch_size, 
-        shuffle=True, 
-        num_workers=num_workers, 
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
         collate_fn=collate_fn
     )
 
     val_loader = DataLoader(
-        val_ds, 
-        batch_size=batch_size, 
-        shuffle=False, 
-        num_workers=num_workers, 
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
         collate_fn=collate_fn
     )
 
