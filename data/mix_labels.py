@@ -23,6 +23,21 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=100):
         print(f"Warning: Training data path {irmas_path} does not exist")
         return []
 
+    # IRMAS directory name to our label mapping
+    irmas_to_label_map = {
+        'cel': 'cello',
+        'cla': 'clarinet',
+        'flu': 'flute',
+        'gac': 'acoustic_guitar',  # Guitar acoustic
+        'gel': 'acoustic_guitar',  # Guitar electric -> acoustic_guitar
+        'org': 'organ',
+        'pia': 'piano',
+        'sax': 'saxophone',
+        'tru': 'trumpet',
+        'vio': 'violin',
+        'voi': 'voice'
+    }
+
     dataset = []
     label_map = {label: i for i, label in enumerate(LABELS)}
 
@@ -35,35 +50,37 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=100):
 
     print(f"Loading {len(wav_files)} audio files...")
 
+    successful_loads = 0
     for wav_file in wav_files:
         try:
-            # Load audio
-            y, sr = librosa.load(wav_file, sr=cfg['sample_rate'], mono=True)
-            audio_tensor = torch.tensor(y, dtype=torch.float32)
+            # Extract label from parent directory name
+            irmas_label = wav_file.parent.name
 
-            # Extract label from filename or parent directory
-            # IRMAS files are typically named like "guitar_001.wav" or in folders by instrument
-            if wav_file.parent.name in label_map:
-                label_str = wav_file.parent.name
+            # Map IRMAS label to our label
+            if irmas_label in irmas_to_label_map:
+                our_label = irmas_to_label_map[irmas_label]
+
+                if our_label in label_map:
+                    # Load audio
+                    y, sr = librosa.load(wav_file, sr=cfg['sample_rate'], mono=True)
+                    audio_tensor = torch.tensor(y, dtype=torch.float32)
+
+                    # Create one-hot label vector
+                    label_vector = torch.zeros(len(LABELS), dtype=torch.long)
+                    label_vector[label_map[our_label]] = 1
+
+                    dataset.append((audio_tensor, label_vector))
+                    successful_loads += 1
+                else:
+                    print(f"Warning: Our label '{our_label}' not in LABELS")
             else:
-                # Try to extract from filename
-                label_str = wav_file.stem.split('_')[0]
-
-            # Create one-hot label vector
-            label_vector = torch.zeros(len(LABELS), dtype=torch.long)
-            if label_str in label_map:
-                label_vector[label_map[label_str]] = 1
-            else:
-                print(f"Warning: Unknown label '{label_str}' for file {wav_file}")
-                continue
-
-            dataset.append((audio_tensor, label_vector))
+                print(f"Warning: Unknown IRMAS label '{irmas_label}' for file {wav_file.name}")
 
         except Exception as e:
             print(f"Error loading {wav_file}: {e}")
             continue
 
-    print(f"Successfully loaded {len(dataset)} audio samples")
+    print(f"Successfully loaded {successful_loads} audio samples")
     return dataset
 
 
