@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import pathlib
+import re
 from torch.utils.data import Dataset, DataLoader
 
 from var import band_ranges, n_ffts, LABELS
@@ -73,6 +74,21 @@ class MultiSTFTNpyDataset(Dataset):
 
         self.label_map = {label: i for i, label in enumerate(LABELS)}
 
+        # IRMAS directory name to our label mapping
+        self.irmas_to_label_map = {
+            'cel': 'cello',
+            'cla': 'clarinet',
+            'flu': 'flute',
+            'gac': 'acoustic_guitar',  # Guitar acoustic
+            'gel': 'acoustic_guitar',  # Guitar electric -> acoustic_guitar
+            'org': 'organ',
+            'pia': 'piano',
+            'sax': 'saxophone',
+            'tru': 'trumpet',
+            'vio': 'violin',
+            'voi': 'voice'
+        }
+
         # Define the expected spectrogram files for each audio
         self.band_ranges = band_ranges
         self.n_ffts = n_ffts
@@ -85,17 +101,62 @@ class MultiSTFTNpyDataset(Dataset):
                 print(f"  {i}: {dir_path.name}")
                 # Test label parsing
                 try:
-                    folder_name = dir_path.name
-                    if folder_name.startswith("mixed_"):
-                        print(f"    -> Mixed sample detected")
+                    labels = self._parse_labels_from_folder_name(dir_path.name)
+                    if labels:
+                        print(f"    -> Parsed labels: {labels}")
                     else:
-                        label_str = folder_name.split("_")[0]
-                        if label_str in self.label_map:
-                            print(f"    -> Original sample, label: {label_str}")
-                        else:
-                            print(f"    -> Unknown label: {label_str}")
+                        print(f"    -> No valid labels found")
                 except Exception as e:
                     print(f"    -> Error parsing label: {e}")
+
+    def _parse_labels_from_folder_name(self, folder_name):
+        """
+        Parse instrument labels from folder name.
+
+        Handles various formats:
+        - Mixed samples: "mixed_3_piano", "mixed_68_trumpet_voice"
+        - Original IRMAS: "238__[org][dru][jaz_blu]1125__1", "[pia][jaz_blu]1471__1"
+        - Simple format: "piano_123", "trumpet_456"
+        """
+        labels = []
+
+        if folder_name.startswith("mixed_"):
+            # Handle mixed samples: e.g., "mixed_3_piano" or "mixed_68_trumpet_voice"
+            parts = folder_name.split("_")
+            if len(parts) >= 3:
+                # Extract instrument labels (everything after "mixed_X_")
+                instrument_parts = parts[2:]  # Skip "mixed" and the ID number
+
+                # Join the parts back and split by common separators
+                instrument_string = "_".join(instrument_parts)
+
+                # Check each label in our mapping
+                for our_label in self.label_map.keys():
+                    if our_label in instrument_string:
+                        labels.append(our_label)
+
+        else:
+            # Handle original IRMAS samples with complex naming
+            # Look for patterns like [cel], [pia], [org], etc.
+            irmas_pattern = r'\[([a-z]{3})\]'
+            irmas_matches = re.findall(irmas_pattern, folder_name)
+
+            for irmas_label in irmas_matches:
+                if irmas_label in self.irmas_to_label_map:
+                    our_label = self.irmas_to_label_map[irmas_label]
+                    if our_label not in labels:  # Avoid duplicates
+                        labels.append(our_label)
+
+            # If no IRMAS pattern found, try simple format
+            if not labels:
+                # Try simple format: "piano_123", "trumpet_456"
+                label_str = folder_name.split("_")[0]
+                if label_str in self.label_map:
+                    labels.append(label_str)
+                elif label_str in self.irmas_to_label_map:
+                    labels.append(self.irmas_to_label_map[label_str])
+
+        return labels
 
     def __len__(self):
         return len(self.dirs)
@@ -104,45 +165,17 @@ class MultiSTFTNpyDataset(Dataset):
         # Get the directory for this audio file
         audio_dir = self.dirs[idx]
 
-        # Parse label from folder name
+        # Parse labels from folder name
         y = torch.zeros(len(LABELS), dtype=torch.long)
-
-        # Handle both original and mixed sample naming
         folder_name = audio_dir.name
 
-        if folder_name.startswith("mixed_"):
-            # Handle mixed samples: e.g., "mixed_3_piano" or "mixed_68_trumpet_voice"
-            # Extract everything after "mixed_X_"
-            parts = folder_name.split("_")
-            if len(parts) >= 3:
-                # Extract instrument labels (everything after the ID)
-                instrument_parts = parts[2:]  # Skip "mixed" and the ID number
+        # Parse labels using the improved function
+        parsed_labels = self._parse_labels_from_folder_name(folder_name)
 
-                # Handle multiple instruments separated by underscores
-                # This assumes instrument names don't contain underscores
-                current_instrument = ""
-                for part in instrument_parts:
-                    if current_instrument:
-                        current_instrument += "_" + part
-                    else:
-                        current_instrument = part
-
-                    # Check if we have a complete instrument name
-                    if current_instrument in self.label_map:
-                        y[self.label_map[current_instrument]] = 1
-                        current_instrument = ""  # Reset for next instrument
-                    elif part in self.label_map:
-                        y[self.label_map[part]] = 1
-                        current_instrument = ""
-
-                # Handle any remaining partial instrument name
-                if current_instrument and current_instrument in self.label_map:
-                    y[self.label_map[current_instrument]] = 1
-        else:
-            # Handle original samples: extract the first part as the label
-            label_str = folder_name.split("_")[0]
-            if label_str in self.label_map:
-                y[self.label_map[label_str]] = 1
+        # Set the corresponding indices in the label vector
+        for label in parsed_labels:
+            if label in self.label_map:
+                y[self.label_map[label]] = 1
 
         # Load all 9 spectrograms
         specs = []
