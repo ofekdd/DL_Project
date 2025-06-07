@@ -1,4 +1,5 @@
 torch>=2.7.0
+pytorch-lightning>=2.0.0
 lightning-fabric==2.0.0
 librosa>=0.10
 numpy==1.26
