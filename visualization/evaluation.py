@@ -119,8 +119,18 @@ def evaluate_model(model, test_dir, cfg, threshold=0.5):
                 # Get directory name for filename extraction
                 dir_name = test_dataset.dirs[i].name
 
+                # IMPORTANT FIX: Add batch dimension to each spectrogram
+                # Convert from [1, H, W] to [1, 1, H, W]
+                specs_batched = []
+                for spec in specs:
+                    if len(spec.shape) == 3:  # [1, H, W]
+                        spec_batched = spec.unsqueeze(0)  # [1, 1, H, W]
+                    else:  # Already has batch dimension
+                        spec_batched = spec
+                    specs_batched.append(spec_batched)
+
                 # Forward pass
-                preds = model(specs).squeeze()
+                preds = model(specs_batched).squeeze()
 
                 # Apply sigmoid to get probabilities
                 if len(preds.shape) == 0:  # Single sample case
@@ -152,6 +162,10 @@ def evaluate_model(model, test_dir, cfg, threshold=0.5):
 
             except Exception as e:
                 print(f"❌ Error processing sample {i}: {e}")
+                # Print more debug info for the first few errors
+                if i < 5:
+                    import traceback
+                    traceback.print_exc()
                 continue
 
     if not all_predictions:
@@ -176,7 +190,6 @@ def evaluate_model(model, test_dir, cfg, threshold=0.5):
         'file_results': file_results,
         'threshold': threshold
     }
-
 
 def calculate_metrics(y_true, y_pred, y_probs):
     """Calculate comprehensive evaluation metrics."""
