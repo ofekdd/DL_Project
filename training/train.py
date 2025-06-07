@@ -45,7 +45,8 @@ def main(config):
     if isinstance(config, dict):
         cfg = config
     else:
-        cfg = yaml.safe_load(open(config))
+        with open(config, 'r') as f:
+            cfg = yaml.safe_load(f)
     # Use the create_dataloaders function with use_multi_stft=True
     train_loader, val_loader = create_dataloaders(
         train_dir="data/processed/train",
