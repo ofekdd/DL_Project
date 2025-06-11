@@ -137,7 +137,7 @@ def predict(model, wav_path, cfg):
     return {label: float(preds[i]) for i, label in enumerate(LABELS)}
 
 
-    def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, threshold=0.6, thresholds=None):
+def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, threshold=0.6, thresholds=None):
     """
     Enhanced prediction function that can show ground truth labels.
 
