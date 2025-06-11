@@ -1,0 +1,15 @@
+description: Optimal classification thresholds for each instrument (balanced precision/recall)
+default_threshold: 0.5
+thresholds:
+  acoustic_guitar: 0.48
+  bass: 0.42
+  cello: 0.45
+  clarinet: 0.51
+  drums: 0.43
+  flute: 0.47
+  organ: 0.49
+  piano: 0.44
+  saxophone: 0.52
+  trumpet: 0.50
+  violin: 0.48
+  voice: 0.45

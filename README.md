@@ -95,6 +95,9 @@ pip install -r requirements.txt
 python data/download_irmas.py  --out_dir data/raw
 python data/preprocess.py      --in_dir data/raw/IRMAS --out_dir data/processed
 python training/train.py       --config configs/model_resnet.yaml
+
+# Optimize detection thresholds for better accuracy
+python visualization/optimize_thresholds.py --metric f1 CHECKPOINT_PATH
 ```
 
 See `configs/default.yaml` for full hyper‑parameters.

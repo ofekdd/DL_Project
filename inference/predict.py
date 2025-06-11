@@ -137,7 +137,7 @@ def predict(model, wav_path, cfg):
     return {label: float(preds[i]) for i, label in enumerate(LABELS)}
 
 
-def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, threshold=0.6):
+    def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, threshold=0.6, thresholds=None):
     """
     Enhanced prediction function that can show ground truth labels.
 
@@ -146,7 +146,8 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, thre
         wav_path: Path to wav file
         cfg: Configuration
         show_ground_truth: Whether to parse and show ground truth from filename
-        threshold: Threshold for binary classification (default: 0.6)
+        threshold: Default threshold for binary classification (default: 0.6)
+        thresholds: Optional dictionary mapping instrument names to thresholds
 
     Returns:
         Dictionary with predictions, binary predictions, and optionally ground truth
@@ -154,8 +155,13 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, thre
     # Get predictions
     predictions = predict(model, wav_path, cfg)
 
-    # Apply threshold to get binary predictions
-    binary_predictions = {label: 1 if score >= threshold else 0 for label, score in predictions.items()}
+    # Apply threshold to get binary predictions (adaptive or fixed)
+    binary_predictions = {}
+    for label, score in predictions.items():
+        # Use instrument-specific threshold if available, otherwise use default
+        label_threshold = thresholds.get(label, threshold) if thresholds else threshold
+        binary_predictions[label] = 1 if score >= label_threshold else 0
+
     active_instruments = [label for label, is_active in binary_predictions.items() if is_active == 1]
 
     result = {
