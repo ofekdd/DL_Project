@@ -3,6 +3,7 @@ import random
 import librosa
 import pathlib
 from var import LABELS
+from data.target_weighting import create_weighted_target
 
 
 def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
@@ -99,7 +100,7 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
 
 
 def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mixtures=None,
-                              min_instruments=None, max_instruments=None):
+                              min_instruments=None, max_instruments=None, use_weighted_targets=False, alpha=0.80):
     """
     Create a multi-label dataset by loading IRMAS data and creating synthetic mixtures.
 
@@ -110,6 +111,8 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
         num_mixtures: Number of synthetic mixtures to create (None to use config)
         min_instruments: Minimum instruments per mixture (None to use config)
         max_instruments: Maximum instruments per mixture (None to use config)
+        use_weighted_targets: If True, generates weighted probability targets instead of binary labels
+        alpha: Proportion of probability mass to assign to positive classes (if using weighted targets)
 
     Returns:
         Tuple of (original_dataset, mixed_dataset)
@@ -161,7 +164,9 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
         original_dataset,
         num_new_samples=num_mixtures,
         min_instruments=min_instruments,
-        max_instruments=max_instruments
+        max_instruments=max_instruments,
+        use_weighted_targets=use_weighted_targets,
+        alpha=alpha
     )
 
     print(f"Created {len(mixed_dataset)} synthetic multi-label samples")
@@ -170,13 +175,21 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
     print("\nExample synthetic mixtures:")
     for i in range(min(3, len(mixed_dataset))):
         audio, labels = mixed_dataset[i]
-        active_labels = [LABELS[j] for j, val in enumerate(labels) if val == 1]
-        print(f"  Mix {i + 1}: Audio shape {audio.shape}, Labels: {active_labels}")
+
+        if use_weighted_targets:
+            # For weighted targets, show probabilities
+            top_indices = torch.topk(labels, min(3, len(labels))).indices
+            top_labels = [(LABELS[j], labels[j].item()) for j in top_indices]
+            print(f"  Mix {i + 1}: Audio shape {audio.shape}, Top weighted labels: {top_labels}")
+        else:
+            # For binary labels, show present instruments
+            active_labels = [LABELS[j] for j, val in enumerate(labels) if val == 1]
+            print(f"  Mix {i + 1}: Audio shape {audio.shape}, Labels: {active_labels}")
 
     return original_dataset, mixed_dataset
 
 
-def create_synthetic_mixtures(dataset, num_new_samples=1000, min_instruments=1, max_instruments=2):
+def create_synthetic_mixtures(dataset, num_new_samples=1000, min_instruments=1, max_instruments=2, use_weighted_targets=False, alpha=0.80):
     """
     Creates synthetic audio mixtures from a dataset of single-instrument samples.
 
@@ -185,9 +198,13 @@ def create_synthetic_mixtures(dataset, num_new_samples=1000, min_instruments=1, 
         num_new_samples: How many new synthetic samples to create
         min_instruments: Minimum instruments per mix
         max_instruments: Maximum instruments per mix
+        use_weighted_targets: If True, generates weighted probability targets instead of binary labels
+        alpha: Proportion of probability mass to assign to positive classes (if using weighted targets)
 
     Returns:
-        List of (mixed_audio_tensor, multi_label_vector)
+        List of (mixed_audio_tensor, target_vector) where target_vector is either:
+          - A binary multi-label vector if use_weighted_targets=False
+          - A probability distribution vector if use_weighted_targets=True
     """
     mixed_dataset = []
 
@@ -208,7 +225,13 @@ def create_synthetic_mixtures(dataset, num_new_samples=1000, min_instruments=1, 
         # 4. Combine labels (element-wise OR)
         combined_label = torch.stack(labels).max(dim=0).values  # multi-label
 
-        # 5. Add to result
-        mixed_dataset.append((mixed_audio, combined_label))
+        # 5. Apply weighting if requested
+        if use_weighted_targets:
+            target_vector = create_weighted_target(combined_label, alpha=alpha)
+        else:
+            target_vector = combined_label
+
+        # 6. Add to result
+        mixed_dataset.append((mixed_audio, target_vector))
 
     return mixed_dataset
