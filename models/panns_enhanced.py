@@ -55,37 +55,36 @@ class PANNsFeatureExtractor(nn.Module):
         if panns_conv_keys:
             print(f"   Sample keys: {panns_conv_keys[:5]}")  # Show first 5 keys
 
-        # Updated mapping based on actual PANNs CNN14 structure
-        # PANNs uses conv_block1, conv_block2, etc. directly
+        # CORRECTED mapping based on actual PANNs CNN14 structure
         key_mapping = {
-            # PANNs key -> Our key
-            'conv_block1.0.weight': 'conv_block1.0.weight',
-            'conv_block1.1.weight': 'conv_block1.1.weight',
-            'conv_block1.1.bias': 'conv_block1.1.bias',
-            'conv_block1.1.running_mean': 'conv_block1.1.running_mean',
-            'conv_block1.1.running_var': 'conv_block1.1.running_var',
-            'conv_block1.1.num_batches_tracked': 'conv_block1.1.num_batches_tracked',
+            # Our key -> PANNs key (note the different naming convention)
+            'conv_block1.0.weight': 'conv_block1.conv1.weight',
+            'conv_block1.1.weight': 'conv_block1.bn1.weight',
+            'conv_block1.1.bias': 'conv_block1.bn1.bias',
+            'conv_block1.1.running_mean': 'conv_block1.bn1.running_mean',
+            'conv_block1.1.running_var': 'conv_block1.bn1.running_var',
+            'conv_block1.1.num_batches_tracked': 'conv_block1.bn1.num_batches_tracked',
 
-            'conv_block2.0.weight': 'conv_block2.0.weight',
-            'conv_block2.1.weight': 'conv_block2.1.weight',
-            'conv_block2.1.bias': 'conv_block2.1.bias',
-            'conv_block2.1.running_mean': 'conv_block2.1.running_mean',
-            'conv_block2.1.running_var': 'conv_block2.1.running_var',
-            'conv_block2.1.num_batches_tracked': 'conv_block2.1.num_batches_tracked',
+            'conv_block2.0.weight': 'conv_block2.conv1.weight',
+            'conv_block2.1.weight': 'conv_block2.bn1.weight',
+            'conv_block2.1.bias': 'conv_block2.bn1.bias',
+            'conv_block2.1.running_mean': 'conv_block2.bn1.running_mean',
+            'conv_block2.1.running_var': 'conv_block2.bn1.running_var',
+            'conv_block2.1.num_batches_tracked': 'conv_block2.bn1.num_batches_tracked',
 
-            'conv_block3.0.weight': 'conv_block3.0.weight',
-            'conv_block3.1.weight': 'conv_block3.1.weight',
-            'conv_block3.1.bias': 'conv_block3.1.bias',
-            'conv_block3.1.running_mean': 'conv_block3.1.running_mean',
-            'conv_block3.1.running_var': 'conv_block3.1.running_var',
-            'conv_block3.1.num_batches_tracked': 'conv_block3.1.num_batches_tracked',
+            'conv_block3.0.weight': 'conv_block3.conv1.weight',
+            'conv_block3.1.weight': 'conv_block3.bn1.weight',
+            'conv_block3.1.bias': 'conv_block3.bn1.bias',
+            'conv_block3.1.running_mean': 'conv_block3.bn1.running_mean',
+            'conv_block3.1.running_var': 'conv_block3.bn1.running_var',
+            'conv_block3.1.num_batches_tracked': 'conv_block3.bn1.num_batches_tracked',
 
-            'conv_block4.0.weight': 'conv_block4.0.weight',
-            'conv_block4.1.weight': 'conv_block4.1.weight',
-            'conv_block4.1.bias': 'conv_block4.1.bias',
-            'conv_block4.1.running_mean': 'conv_block4.1.running_mean',
-            'conv_block4.1.running_var': 'conv_block4.1.running_var',
-            'conv_block4.1.num_batches_tracked': 'conv_block4.1.num_batches_tracked',
+            'conv_block4.0.weight': 'conv_block4.conv1.weight',
+            'conv_block4.1.weight': 'conv_block4.bn1.weight',
+            'conv_block4.1.bias': 'conv_block4.bn1.bias',
+            'conv_block4.1.running_mean': 'conv_block4.bn1.running_mean',
+            'conv_block4.1.running_var': 'conv_block4.bn1.running_var',
+            'conv_block4.1.num_batches_tracked': 'conv_block4.bn1.num_batches_tracked',
         }
 
         # Filter and load weights
