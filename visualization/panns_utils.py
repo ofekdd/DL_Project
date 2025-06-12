@@ -11,49 +11,9 @@ from data.download_pnn import download_panns_checkpoint
 
 def load_panns_model_from_checkpoint(checkpoint_path, n_classes, cfg=None):
     """Load a trained PANNs-enhanced model from checkpoint."""
-    # Get PANNs pretrained model path
-    panns_path = download_panns_checkpoint()
-
-    # Initialize model structure
-    model = MultiSTFTCNN_WithPANNs(
-        n_classes=n_classes,
-        pretrained_path=panns_path,
-        freeze_backbone=False  # We don't need freezing for inference
-    )
-
-    # Load checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location='cpu')
-
-    # Extract state dict - handle both direct state_dict and PyTorch Lightning format
-    if "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-
-        # Remove "model." prefix if present (PyTorch Lightning adds this)
-        new_state_dict = {}
-        for key, value in state_dict.items():
-            if key.startswith("model."):
-                new_key = key[6:]  # Remove "model." prefix
-                new_state_dict[new_key] = value
-            else:
-                new_state_dict[key] = value
-
-        # Load the state dict
-        try:
-            model.load_state_dict(new_state_dict, strict=True)
-            print("✅ PANNs-enhanced model loaded successfully with strict=True")
-        except RuntimeError as e:
-            print(f"⚠️ Strict loading failed: {e}")
-            model.load_state_dict(new_state_dict, strict=False)
-            print("✅ PANNs-enhanced model loaded with strict=False (some weights may be missing)")
-    else:
-        # Direct state dict
-        model.load_state_dict(checkpoint, strict=False)
-        print("✅ PANNs-enhanced model loaded directly from checkpoint")
-
-    # Set to evaluation mode
-    model.eval()
-
-    return model
+    # Use the unified model loader
+    from utils.model_loader import load_model
+    return load_model(checkpoint_path, cfg=cfg, n_classes=n_classes, force_architecture='panns')
 
 
 def compare_model_performance(test_files, original_model, panns_model, cfg, threshold=0.6):

@@ -7,7 +7,8 @@ import torch
 import pathlib
 import numpy as np
 
-from inference.predict import extract_features, predict, load_model_from_checkpoint
+from inference.predict import extract_features, predict
+from utils.model_loader import load_model_from_checkpoint
 from var import LABELS
 
 

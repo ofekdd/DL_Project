@@ -49,65 +49,86 @@ class PANNsFeatureExtractor(nn.Module):
         model_dict = self.state_dict()
         pretrained_dict = checkpoint['model']
 
-        # Filter and adapt keys to match our architecture
-        filtered_dict = {}
+        # Debug: Print available PANNs keys to understand the structure
+        panns_conv_keys = [k for k in pretrained_dict.keys() if 'conv_block' in k]
+        print(f"🔍 Found {len(panns_conv_keys)} PANNs conv keys")
+        if panns_conv_keys:
+            print(f"   Sample keys: {panns_conv_keys[:5]}")  # Show first 5 keys
 
-        # Mapping between PANNs keys and our keys
+        # Updated mapping based on actual PANNs CNN14 structure
+        # PANNs uses conv_block1, conv_block2, etc. directly
         key_mapping = {
-            'conv_block1.0.weight': 'conv1.weight',
-            'conv_block1.1.weight': 'bn1.weight',
-            'conv_block1.1.bias': 'bn1.bias',
-            'conv_block1.1.running_mean': 'bn1.running_mean',
-            'conv_block1.1.running_var': 'bn1.running_var',
+            # PANNs key -> Our key
+            'conv_block1.0.weight': 'conv_block1.0.weight',
+            'conv_block1.1.weight': 'conv_block1.1.weight',
+            'conv_block1.1.bias': 'conv_block1.1.bias',
+            'conv_block1.1.running_mean': 'conv_block1.1.running_mean',
+            'conv_block1.1.running_var': 'conv_block1.1.running_var',
+            'conv_block1.1.num_batches_tracked': 'conv_block1.1.num_batches_tracked',
 
-            'conv_block2.0.weight': 'conv2.weight',
-            'conv_block2.1.weight': 'bn2.weight',
-            'conv_block2.1.bias': 'bn2.bias',
-            'conv_block2.1.running_mean': 'bn2.running_mean',
-            'conv_block2.1.running_var': 'bn2.running_var',
+            'conv_block2.0.weight': 'conv_block2.0.weight',
+            'conv_block2.1.weight': 'conv_block2.1.weight',
+            'conv_block2.1.bias': 'conv_block2.1.bias',
+            'conv_block2.1.running_mean': 'conv_block2.1.running_mean',
+            'conv_block2.1.running_var': 'conv_block2.1.running_var',
+            'conv_block2.1.num_batches_tracked': 'conv_block2.1.num_batches_tracked',
 
-            'conv_block3.0.weight': 'conv3.weight',
-            'conv_block3.1.weight': 'bn3.weight',
-            'conv_block3.1.bias': 'bn3.bias',
-            'conv_block3.1.running_mean': 'bn3.running_mean',
-            'conv_block3.1.running_var': 'bn3.running_var',
+            'conv_block3.0.weight': 'conv_block3.0.weight',
+            'conv_block3.1.weight': 'conv_block3.1.weight',
+            'conv_block3.1.bias': 'conv_block3.1.bias',
+            'conv_block3.1.running_mean': 'conv_block3.1.running_mean',
+            'conv_block3.1.running_var': 'conv_block3.1.running_var',
+            'conv_block3.1.num_batches_tracked': 'conv_block3.1.num_batches_tracked',
 
-            'conv_block4.0.weight': 'conv4.weight',
-            'conv_block4.1.weight': 'bn4.weight',
-            'conv_block4.1.bias': 'bn4.bias',
-            'conv_block4.1.running_mean': 'bn4.running_mean',
-            'conv_block4.1.running_var': 'bn4.running_var',
+            'conv_block4.0.weight': 'conv_block4.0.weight',
+            'conv_block4.1.weight': 'conv_block4.1.weight',
+            'conv_block4.1.bias': 'conv_block4.1.bias',
+            'conv_block4.1.running_mean': 'conv_block4.1.running_mean',
+            'conv_block4.1.running_var': 'conv_block4.1.running_var',
+            'conv_block4.1.num_batches_tracked': 'conv_block4.1.num_batches_tracked',
         }
 
-        # Attempt to load weights, but don't fail if they don't match
+        # Filter and load weights
+        filtered_dict = {}
         loaded_keys = 0
+
         for our_key, panns_key in key_mapping.items():
-            if panns_key in pretrained_dict:
+            if panns_key in pretrained_dict and our_key in model_dict:
                 try:
                     our_shape = model_dict[our_key].shape
                     panns_shape = pretrained_dict[panns_key].shape
 
-                    # Handle first conv layer - PANNs might have different input channels
-                    if our_key == 'conv_block1.0.weight' and our_shape != panns_shape:
-                        # Adapt the first layer if needed (e.g., different input channels)
-                        if our_shape[1] != panns_shape[1]:
-                            # If we have 1 channel and PANNs has 3, average over the 3 channels
+                    # Handle first conv layer input channel mismatch
+                    if our_key == 'conv_block1.0.weight':
+                        if our_shape[1] == 1 and panns_shape[1] == 1:
+                            # Both single channel - direct copy
+                            filtered_dict[our_key] = pretrained_dict[panns_key]
+                            loaded_keys += 1
+                        elif our_shape[1] == 1 and panns_shape[1] > 1:
+                            # PANNs has more channels, take average
                             adapted_weight = pretrained_dict[panns_key].mean(dim=1, keepdim=True)
-                            if adapted_weight.shape == our_shape:
-                                filtered_dict[our_key] = adapted_weight
-                                loaded_keys += 1
+                            filtered_dict[our_key] = adapted_weight
+                            loaded_keys += 1
+                            print(f"   ✅ Adapted first conv layer: {panns_shape} -> {our_shape}")
+                        else:
+                            print(f"   ⚠️ Cannot adapt first conv layer: {panns_shape} vs {our_shape}")
                     elif our_shape == panns_shape:
+                        # Direct copy for matching shapes
                         filtered_dict[our_key] = pretrained_dict[panns_key]
                         loaded_keys += 1
+                    else:
+                        print(f"   ⚠️ Shape mismatch for {our_key}: {our_shape} vs {panns_shape}")
+
                 except Exception as e:
-                    print(f"Couldn't load {our_key} from {panns_key}: {e}")
+                    print(f"   ❌ Error loading {our_key}: {e}")
 
-        print(f"✅ Loaded {loaded_keys} layers from PANNs pretrained model")
+        print(f"✅ Successfully loaded {loaded_keys}/{len(key_mapping)} layers from PANNs")
 
-        # Update model weights with pretrained weights
+        # Update model weights
         if filtered_dict:
             model_dict.update(filtered_dict)
             self.load_state_dict(model_dict)
+            print(f"✅ PANNs pretrained weights integrated successfully!")
         else:
             print("⚠️ No pretrained weights were loaded. Using random initialization.")
 

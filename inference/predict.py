@@ -51,52 +51,9 @@ def load_model_from_checkpoint(ckpt_path, n_classes):
     Returns:
         Loaded model
     """
-    # Try to determine if this is a PANNs-enhanced model based on filename
-    is_panns = 'panns' in str(ckpt_path).lower()
-
-    if is_panns:
-        print(f"Detected PANNs-enhanced model from checkpoint filename")
-        from models.panns_enhanced import MultiSTFTCNN_WithPANNs
-        from data.download_pnn import download_panns_checkpoint
-
-        # Get PANNs checkpoint path
-        panns_path = download_panns_checkpoint()
-
-        # Create model
-        model = MultiSTFTCNN_WithPANNs(n_classes=n_classes, pretrained_path=panns_path, freeze_backbone=False)
-    else:
-        # Regular model
-        model = MultiSTFTCNN(n_classes=n_classes)
-
-    # Load checkpoint
-    checkpoint = torch.load(ckpt_path, map_location="cpu")
-
-    # Extract state dict - handle both direct state_dict and PyTorch Lightning format
-    if "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-    else:
-        state_dict = checkpoint
-
-    # Remove "model." prefix if present (PyTorch Lightning adds this)
-    new_state_dict = {}
-    for key, value in state_dict.items():
-        if key.startswith("model."):
-            new_key = key[6:]  # Remove "model." prefix
-            new_state_dict[new_key] = value
-        else:
-            new_state_dict[key] = value
-
-    # Load the corrected state dict
-    try:
-        model.load_state_dict(new_state_dict, strict=True)
-        print("✅ Model loaded successfully with strict=True")
-    except RuntimeError as e:
-        print(f"⚠️ Strict loading failed, trying with strict=False: {e}")
-        model.load_state_dict(new_state_dict, strict=False)
-        print("✅ Model loaded with strict=False (some weights may be missing)")
-
-    return model
-
+    # Use the unified model loader
+    from utils.model_loader import load_model
+    return load_model(ckpt_path, n_classes=n_classes)
 
 def predict(model, wav_path, cfg):
     """
