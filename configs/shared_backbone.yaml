@@ -1,0 +1,24 @@
+# Shared Backbone PANNs Enhanced Configuration
+model_name: shared_backbone_panns
+sample_rate: 22050
+n_mels: 64
+hop_length: 512
+batch_size: 8
+num_epochs: 50
+learning_rate: 2e-4
+num_workers: 4
+
+# Dataset creation parameters
+max_original_samples: 50
+num_mixtures: 100
+min_instruments: 1
+max_instruments: 3
+original_data_percentage: 0.1
+
+# Model hyperparameters
+n_branches: 9  # 3 bands × 3 window sizes
+branch_output_dim: 128
+
+# Validation settings
+limit_val_batches: 1.0  # Use all validation data
+num_sanity_val_steps: 2  # Quick sanity check
