@@ -16,7 +16,7 @@ class LitModel(pl.LightningModule):
         # Using MultiSTFTCNN model directly as specified
         self.model = MultiSTFTCNN(
             n_classes=n_classes,
-            n_branches=cfg.get('n_branches', 9),
+            n_branches=3,
             branch_output_dim=cfg.get('branch_output_dim', 128)
         )
         self.metrics = MetricCollection(n_classes)

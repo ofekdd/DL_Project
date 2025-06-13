@@ -180,9 +180,14 @@ class MultiSTFTNpyDataset(Dataset):
         # Load all 9 spectrograms
         specs = []
         missing_files = 0
-        for band_range in self.band_ranges:
-            for n_fft in self.n_ffts:
-                spec_path = audio_dir / f"{band_range}_fft{n_fft}.npy"
+        optimized_stfts = [
+            ("0-1000Hz", 1024),
+            ("1000-4000Hz", 512),
+            ("4000-11025Hz", 256),
+        ]
+
+        for band_label, n_fft in optimized_stfts:
+            spec_path = audio_dir / f"{band_label}_fft{n_fft}.npy"
 
                 if spec_path.exists():
                     spec = np.load(spec_path)

@@ -19,7 +19,7 @@ class STFTBranch(nn.Module):
         return self.cnn(x)
 
 class MultiSTFTCNN(nn.Module):
-    def __init__(self, n_classes=11, n_branches=9, branch_output_dim=128):
+    def __init__(self, n_classes=11, n_branches=3, branch_output_dim=128):
         super().__init__()
         self.branches = nn.ModuleList([
             STFTBranch(out_features=branch_output_dim) for _ in range(n_branches)
@@ -31,8 +31,8 @@ class MultiSTFTCNN(nn.Module):
 
     def forward(self, x_list):
         """
-        x_list: List[Tensor] of shape (B, 1, F, T), length = 9
+        x_list: List[Tensor] of shape (B, 1, F, T), length = 3
         """
         features = [branch(x) for branch, x in zip(self.branches, x_list)]
-        combined = torch.cat(features, dim=1)  # shape: (B, 9 * 128)
+        combined = torch.cat(features, dim=1)  # shape: (B, 3 * 128)
         return self.classifier(combined)

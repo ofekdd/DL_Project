@@ -9,7 +9,7 @@ from var import LABELS, n_ffts, band_ranges_as_tuples
 
 def extract_features(path, cfg):
     """
-    Extract 9 spectrograms (3 window sizes × 3 frequency bands) from audio file.
+    Extract 3 spectrograms (3 window sizes × 3 frequency bands) from audio file.
 
     Args:
         path: Path to audio file
@@ -21,17 +21,21 @@ def extract_features(path, cfg):
     y, sr = librosa.load(path, sr=cfg['sample_rate'], mono=True)
     specs_dict = generate_multi_stft(y, sr)
 
-    # For MultiSTFTCNN, we need all 9 spectrograms in the correct order
+    # For MultiSTFTCNN, we need all 3 spectrograms in the correct order
     specs_list = []
-    for band_range in band_ranges_as_tuples:
-        band_label = f"{band_range[0]}-{band_range[1]}Hz"
-        for n_fft in n_ffts:
-            key = (band_label, n_fft)
-            if key in specs_dict:
+    optimized_stfts = [
+        ("0-1000Hz", 1024),
+        ("1000-4000Hz", 512),
+        ("4000-11025Hz", 256),
+    ]
+
+    for band_label, n_fft in optimized_stfts:
+        key = (band_label, n_fft)
+        if key in specs_dict:
                 spec = specs_dict[key]
                 spec_tensor = torch.tensor(spec).unsqueeze(0).unsqueeze(0)  # [1, 1, F, T]
                 specs_list.append(spec_tensor)
-            else:
+        else:
                 # If a specific spectrogram is missing, use a zero tensor of appropriate shape
                 print(f"Warning: Missing spectrogram for {key}")
                 # Use a small dummy tensor as fallback
@@ -98,7 +102,7 @@ def predict(model, wav_path, cfg):
     """
     model.eval()
 
-    # Extract features as list of 9 spectrograms
+    # Extract features as list of 3 spectrograms
     specs_list = extract_features(wav_path, cfg)
 
     with torch.no_grad():

@@ -15,7 +15,7 @@ def generate_multi_stft(
         band_ranges=band_ranges_as_tuples
 ):
     """
-    Generates 3 spectrograms: 3 window sizes × 3 frequency bands.
+    "Generates 3 spectrograms, each optimized for a frequency band."
 
     Parameters:
         y (np.ndarray): Audio waveform
@@ -28,11 +28,10 @@ def generate_multi_stft(
     """
     result = {}
 
-    # Define the 3 optimal STFT settings
     optimized_stfts = [
-        ((0, 1000), 1024),  # low freq + long window
-        ((1000, 4000), 512),  # mid freq + medium window
-        ((4000, 11025), 256),  # high freq + short window
+        ((0, 1000), 1024),  # low freq → long window
+        ((1000, 4000), 512),  # mid freq → medium window
+        ((4000, 11025), 256)  # high freq → short window
     ]
 
     for (f_low, f_high), n_fft in optimized_stfts:
