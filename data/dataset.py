@@ -189,18 +189,15 @@ class MultiSTFTNpyDataset(Dataset):
         for band_label, n_fft in optimized_stfts:
             spec_path = audio_dir / f"{band_label}_fft{n_fft}.npy"
 
-                if spec_path.exists():
-                    spec = np.load(spec_path)
-                    spec_tensor = torch.tensor(spec).unsqueeze(0)  # [1,H,W]
-                else:
-                    # If a specific spectrogram is missing, use a zero tensor of appropriate shape
-                    # This is a fallback and should be rare
-                    print(f"Warning: Missing spectrogram for {spec_path}")
-                    missing_files += 1
-                    # Use a small dummy tensor as fallback
-                    spec_tensor = torch.zeros(1, 10, 10)
+            if spec_path.exists():  #
+                spec = np.load(spec_path)
+                spec_tensor = torch.tensor(spec).unsqueeze(0)  # [1,H,W]
+            else:
+                print(f"Warning: Missing spectrogram for {spec_path}")
+                missing_files += 1
+                spec_tensor = torch.zeros(1, 10, 10)
 
-                specs.append(spec_tensor)
+            specs.append(spec_tensor)
 
         # Debug: Check if we have any valid labels
         if y.sum() == 0:

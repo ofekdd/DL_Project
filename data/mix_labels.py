@@ -6,7 +6,7 @@ def create_synthetic_mixtures(
     dataset,
     num_new_samples=10000,
     min_instruments=1,
-    max_instruments=4,
+    max_instruments=3,
     silence_ratio=0.02,
     max_shift=1000,
     gain_range=(0.8, 1.2),
