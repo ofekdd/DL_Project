@@ -88,145 +88,197 @@ def process_mixed_audio(audio_tensor, labels, cfg, sample_id):
 
 def preprocess_mixed_data(irmas_root, mixed_dataset, out_dir, cfg, original_data_percentage=1.0):
     """
-    Preprocess both original IRMAS data and mixed multi-label data with 80/10/10 split.
+    Preprocess both original IRMAS data and mixed multi-label data.
 
     Args:
-        irmas_root: Path to original IRMAS dataset
-        mixed_dataset: List of (audio_tensor, label_vector) tuples
-        out_dir: Output directory for processed data
+        irmas_root: Path to IRMAS dataset root directory
+        mixed_dataset: List of (audio_tensor, label_vector) for mixed samples
+        out_dir: Output directory for processed features
         cfg: Configuration dictionary
         original_data_percentage: Percentage of original data to use (0.0 to 1.0)
     """
-    out_dir = pathlib.Path(out_dir)
-    train_dir = out_dir / 'train'
-    val_dir = out_dir / 'val'
-    test_dir = out_dir / 'test'  # Add test directory
+    import os
+    import random
+    from pathlib import Path
+    from tqdm import tqdm
+    import librosa
+    import numpy as np
 
-    # Create all directories
-    train_dir.mkdir(parents=True, exist_ok=True)
-    val_dir.mkdir(parents=True, exist_ok=True)
-    test_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(out_dir)
 
-    # First, process original IRMAS data (single-label)
-    print("Processing original IRMAS data...")
-    irmas_path = pathlib.Path(irmas_root)
-    wav_files = list(irmas_path.rglob("*.wav"))
+    # Create split directories
+    train_dir = out_dir / "train"
+    val_dir = out_dir / "val"
+    test_dir = out_dir / "test"
 
-    if wav_files:
-        # Apply percentage filter to original data
-        if 0 < original_data_percentage < 1.0:
-            original_count = int(len(wav_files) * original_data_percentage)
-            np.random.shuffle(wav_files)  # Shuffle before taking subset
-            wav_files = wav_files[:original_count]
-            print(f"Using {original_data_percentage * 100}% of original data: {len(wav_files)} files")
-        elif original_data_percentage == 0:
-            wav_files = []
-            print("Skipping original data (percentage = 0)")
+    for dir_path in [train_dir, val_dir, test_dir]:
+        dir_path.mkdir(parents=True, exist_ok=True)
+
+    # ============================================================================
+    # 1. PROCESS ORIGINAL IRMAS DATA
+    # ============================================================================
+
+    if original_data_percentage > 0:
+        print(f"Using {original_data_percentage * 100:.1f}% of original IRMAS data (from config)")
+
+        # FIX: Check if irmas_root already contains the training data directory
+        irmas_root_path = Path(irmas_root)
+
+        # Try different possible paths
+        possible_paths = [
+            irmas_root_path,  # Direct path to training data
+            irmas_root_path / "IRMAS-TrainingData",  # Append training data folder
+            irmas_root_path.parent / "IRMAS-TrainingData",  # Go up one level
+        ]
+
+        irmas_path = None
+        for candidate_path in possible_paths:
+            print(f"Checking path: {candidate_path}")
+            if candidate_path.exists() and any(candidate_path.rglob("*.wav")):
+                irmas_path = candidate_path
+                print(f"✅ Found IRMAS training data at: {irmas_path}")
+                break
+
+        if irmas_path and irmas_path.exists():
+            print("Processing original IRMAS data...")
+
+            # Get all WAV files
+            wav_files = list(irmas_path.rglob("*.wav"))
+            print(f"Found {len(wav_files)} WAV files in {irmas_path}")
+
+            # Apply percentage filter
+            if original_data_percentage < 1.0:
+                num_files = int(len(wav_files) * original_data_percentage)
+                wav_files = random.sample(wav_files, num_files)
+                print(f"Using {original_data_percentage * 100:.1f}% of data: {len(wav_files)} files")
+            else:
+                print(f"Using all original data: {len(wav_files)} files")
+
+            # Split original data
+            random.shuffle(wav_files)
+            train_split = int(len(wav_files) * 0.8)  # 80% train
+            val_split = int(len(wav_files) * 0.9)  # 10% val, 10% test
+
+            original_splits = {
+                'train': wav_files[:train_split],
+                'val': wav_files[train_split:val_split],
+                'test': wav_files[val_split:]
+            }
+
+            print(
+                f"Original data split: {len(original_splits['train'])} train, {len(original_splits['val'])} val, {len(original_splits['test'])} test")
+
+            # Process each split
+            for split_name, files in original_splits.items():
+                if not files:
+                    continue
+
+                print(f"Processing {len(files)} original {split_name} files...")
+                split_dir = out_dir / split_name
+
+                for i, wav_file in enumerate(tqdm(files, desc=f"Processing {split_name} original files")):
+                    try:
+                        # Load audio
+                        y, sr = librosa.load(wav_file, sr=cfg['sample_rate'], mono=True)
+
+                        # Extract instrument label from parent directory
+                        irmas_label = wav_file.parent.name
+
+                        # Create UNIQUE directory name for each sample
+                        # Format: original_{instrument}_{index}_{filename_without_ext}
+                        filename_base = wav_file.stem  # filename without extension
+                        sample_dir_name = f"original_{irmas_label}_{i:04d}_{filename_base}"
+                        sample_dir = split_dir / sample_dir_name
+                        sample_dir.mkdir(parents=True, exist_ok=True)
+
+                        # Generate and save spectrograms
+                        specs = generate_multi_stft(y, sr)
+
+                        for (band_label, n_fft), spec in specs.items():
+                            spec_filename = f"{band_label}_fft{n_fft}.npy"
+                            np.save(sample_dir / spec_filename, spec)
+
+                    except Exception as e:
+                        print(f"Error processing {wav_file}: {e}")
+                        continue
         else:
-            print(f"Using all original data: {len(wav_files)} files")
+            print(f"❌ Error: IRMAS training data not found!")
+            print(f"   Searched paths:")
+            for p in possible_paths:
+                print(f"     {p} - {'EXISTS' if p.exists() else 'NOT FOUND'}")
 
-        if wav_files:
-            # Split original data into train/val/test (80/10/10 split)
-            np.random.shuffle(wav_files)
-            train_split = int(len(wav_files) * 0.8)
-            val_split = int(len(wav_files) * 0.9)
+    # ============================================================================
+    # 2. PROCESS MIXED MULTI-LABEL DATA
+    # ============================================================================
 
-            train_files = wav_files[:train_split]
-            val_files = wav_files[train_split:val_split]
-            test_files = wav_files[val_split:]
+    if mixed_dataset:
+        print(f"\nProcessing {len(mixed_dataset)} mixed multi-label samples...")
 
-            print(f"Original data split: {len(train_files)} train, {len(val_files)} val, {len(test_files)} test")
+        # Split mixed data
+        random.shuffle(mixed_dataset)
+        mixed_train_split = int(len(mixed_dataset) * 0.8)  # 80% train
+        mixed_val_split = int(len(mixed_dataset) * 0.9)  # 10% val, 10% test
 
-            # Process training files
-            print(f"Processing {len(train_files)} original training files...")
-            for wav in tqdm.tqdm(train_files):
-                specs_dict = process_file(wav, cfg)
-                rel_dir = wav.relative_to(irmas_path).with_suffix("")
-                file_out_dir = train_dir / rel_dir
-                file_out_dir.mkdir(parents=True, exist_ok=True)
-                for (band_label, n_fft), spec in specs_dict.items():
-                    spec_filename = f"{band_label}_fft{n_fft}.npy"
-                    np.save(file_out_dir / spec_filename, spec)
+        mixed_splits = {
+            'train': mixed_dataset[:mixed_train_split],
+            'val': mixed_dataset[mixed_train_split:mixed_val_split],
+            'test': mixed_dataset[mixed_val_split:]
+        }
 
-            # Process validation files
-            print(f"Processing {len(val_files)} original validation files...")
-            for wav in tqdm.tqdm(val_files):
-                specs_dict = process_file(wav, cfg)
-                rel_dir = wav.relative_to(irmas_path).with_suffix("")
-                file_out_dir = val_dir / rel_dir
-                file_out_dir.mkdir(parents=True, exist_ok=True)
-                for (band_label, n_fft), spec in specs_dict.items():
-                    spec_filename = f"{band_label}_fft{n_fft}.npy"
-                    np.save(file_out_dir / spec_filename, spec)
+        print(
+            f"Mixed data split: {len(mixed_splits['train'])} train, {len(mixed_splits['val'])} val, {len(mixed_splits['test'])} test")
 
-            # Process test files
-            print(f"Processing {len(test_files)} original test files...")
-            for wav in tqdm.tqdm(test_files):
-                specs_dict = process_file(wav, cfg)
-                rel_dir = wav.relative_to(irmas_path).with_suffix("")
-                file_out_dir = test_dir / rel_dir
-                file_out_dir.mkdir(parents=True, exist_ok=True)
-                for (band_label, n_fft), spec in specs_dict.items():
-                    spec_filename = f"{band_label}_fft{n_fft}.npy"
-                    np.save(file_out_dir / spec_filename, spec)
-        else:
-            # If no original files, create empty variables for summary
-            train_files, val_files, test_files = [], [], []
+        # Process each split
+        for split_name, samples in mixed_splits.items():
+            if not samples:
+                continue
 
-    # Now, process mixed data (multi-label) with same 80/10/10 split
-    print(f"\nProcessing {len(mixed_dataset)} mixed multi-label samples...")
-    np.random.shuffle(mixed_dataset)
+            split_dir = out_dir / split_name
 
-    train_mixed_split = int(len(mixed_dataset) * 0.8)
-    val_mixed_split = int(len(mixed_dataset) * 0.9)
+            for i, (audio_tensor, label_vector) in enumerate(
+                    tqdm(samples, desc=f"Processing {split_name} mixed samples")):
+                try:
+                    # Convert audio tensor to numpy
+                    y = audio_tensor.numpy()
 
-    train_mixed = mixed_dataset[:train_mixed_split]
-    val_mixed = mixed_dataset[train_mixed_split:val_mixed_split]
-    test_mixed = mixed_dataset[val_mixed_split:]
+                    # Get active instrument labels for directory naming
+                    from var import LABELS
+                    active_labels = [LABELS[j] for j, val in enumerate(label_vector) if val == 1]
 
-    print(f"Mixed data split: {len(train_mixed)} train, {len(val_mixed)} val, {len(test_mixed)} test")
+                    # Create directory name
+                    label_str = "_".join(active_labels)
+                    sample_dir_name = f"mixed_{i}_{label_str}"
+                    sample_dir = split_dir / sample_dir_name
+                    sample_dir.mkdir(parents=True, exist_ok=True)
 
-    # Process mixed training data
-    for i, (audio_tensor, labels) in enumerate(tqdm.tqdm(train_mixed)):
-        specs_dict, labels_dict = process_mixed_audio(audio_tensor, labels, cfg, f"mixed_train_{i}")
-        active_labels_str = "_".join(labels_dict['active_labels'])
-        file_out_dir = train_dir / f"mixed_{i}_{active_labels_str}"
-        file_out_dir.mkdir(parents=True, exist_ok=True)
-        for (band_label, n_fft), spec in specs_dict.items():
-            spec_filename = f"{band_label}_fft{n_fft}.npy"
-            np.save(file_out_dir / spec_filename, spec)
-        np.save(file_out_dir / "labels.npy", labels_dict['multi_label_vector'])
+                    # Generate and save spectrograms
+                    specs = generate_multi_stft(y, cfg['sample_rate'])
 
-    # Process mixed validation data
-    for i, (audio_tensor, labels) in enumerate(tqdm.tqdm(val_mixed)):
-        specs_dict, labels_dict = process_mixed_audio(audio_tensor, labels, cfg, f"mixed_val_{i}")
-        active_labels_str = "_".join(labels_dict['active_labels'])
-        file_out_dir = val_dir / f"mixed_{i}_{active_labels_str}"
-        file_out_dir.mkdir(parents=True, exist_ok=True)
-        for (band_label, n_fft), spec in specs_dict.items():
-            spec_filename = f"{band_label}_fft{n_fft}.npy"
-            np.save(file_out_dir / spec_filename, spec)
-        np.save(file_out_dir / "labels.npy", labels_dict['multi_label_vector'])
+                    for (band_label, n_fft), spec in specs.items():
+                        spec_filename = f"{band_label}_fft{n_fft}.npy"
+                        np.save(sample_dir / spec_filename, spec)
 
-    # Process mixed test data
-    for i, (audio_tensor, labels) in enumerate(tqdm.tqdm(test_mixed)):
-        specs_dict, labels_dict = process_mixed_audio(audio_tensor, labels, cfg, f"mixed_test_{i}")
-        active_labels_str = "_".join(labels_dict['active_labels'])
-        file_out_dir = test_dir / f"mixed_{i}_{active_labels_str}"
-        file_out_dir.mkdir(parents=True, exist_ok=True)
-        for (band_label, n_fft), spec in specs_dict.items():
-            spec_filename = f"{band_label}_fft{n_fft}.npy"
-            np.save(file_out_dir / spec_filename, spec)
-        np.save(file_out_dir / "labels.npy", labels_dict['multi_label_vector'])
+                except Exception as e:
+                    print(f"Error processing mixed sample {i}: {e}")
+                    continue
 
-    print(f"✅ Preprocessing complete with 80/10/10 split!")
-    print(
-        f"   Original data: {len(train_files) if 'train_files' in locals() else 0} train + {len(val_files) if 'val_files' in locals() else 0} val + {len(test_files) if 'test_files' in locals() else 0} test")
-    print(f"   Mixed data: {len(train_mixed)} train + {len(val_mixed)} val + {len(test_mixed)} test")
-    total_train = (len(train_files) if 'train_files' in locals() else 0) + len(train_mixed)
-    total_val = (len(val_files) if 'val_files' in locals() else 0) + len(val_mixed)
-    total_test = (len(test_files) if 'test_files' in locals() else 0) + len(test_mixed)
-    print(f"   Total: {total_train} train + {total_val} val + {total_test} test")
+    # ============================================================================
+    # 3. SUMMARY
+    # ============================================================================
+
+    print("✅ Preprocessing complete with 80/10/10 split!")
+
+    # Count final samples
+    for split in ['train', 'val', 'test']:
+        split_path = out_dir / split
+        if split_path.exists():
+            all_dirs = [d for d in split_path.iterdir() if d.is_dir()]
+            original_count = len([d for d in all_dirs if d.name.startswith('original_')])
+            mixed_count = len([d for d in all_dirs if d.name.startswith('mixed_')])
+            print(
+                f"   {split.capitalize()} data: {original_count} original + {mixed_count} mixed = {len(all_dirs)} total")
+
+    print(f"✅ Preprocessing complete with mixed labels. Features saved to {out_dir}")
 
 def preprocess_data(in_dir, out_dir, cfg):
     """Standard preprocessing with 80/10/10 split."""

@@ -1,6 +1,9 @@
 import torch
 import random
 import torch.nn.functional as F
+import librosa
+import pathlib
+from var import LABELS
 
 
 def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
@@ -18,6 +21,16 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
     # Use config value if max_samples not explicitly provided
     if max_samples is None:
         max_samples = cfg.get('max_original_samples', 100)
+
+    # Handle string "None" from YAML config
+    if isinstance(max_samples, str) and max_samples.lower() == 'none':
+        max_samples = None
+    elif isinstance(max_samples, str):
+        try:
+            max_samples = int(max_samples)
+        except ValueError:
+            print(f"Warning: Could not convert max_samples '{max_samples}' to int, using None")
+            max_samples = None
 
     irmas_path = pathlib.Path(irmas_root) / "IRMAS-TrainingData"
 
@@ -46,8 +59,8 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
     # Get all WAV files from the training data
     wav_files = list(irmas_path.rglob("*.wav"))
 
-    # Limit samples if specified
-    if max_samples and len(wav_files) > max_samples:
+    # Limit samples if specified (now safely handles None and integers)
+    if max_samples is not None and isinstance(max_samples, int) and len(wav_files) > max_samples:
         wav_files = random.sample(wav_files, max_samples)
 
     print(f"Loading {len(wav_files)} audio files...")
@@ -87,7 +100,7 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
 
 
 def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mixtures=None,
-                              min_instruments=None, max_instruments=None):
+                              min_instruments=None, max_instruments=None, use_weighted_targets=False, alpha=0.80):
     """
     Create a multi-label dataset by loading IRMAS data and creating synthetic mixtures.
 
@@ -98,6 +111,8 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
         num_mixtures: Number of synthetic mixtures to create (None to use config)
         min_instruments: Minimum instruments per mixture (None to use config)
         max_instruments: Maximum instruments per mixture (None to use config)
+        use_weighted_targets: If True, generates weighted probability targets instead of binary labels
+        alpha: Proportion of probability mass to assign to positive classes (if using weighted targets)
 
     Returns:
         Tuple of (original_dataset, mixed_dataset)
@@ -111,6 +126,22 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
         min_instruments = cfg.get('min_instruments', 1)
     if max_instruments is None:
         max_instruments = cfg.get('max_instruments', 2)
+
+    # Handle string "None" values from YAML config
+    def convert_config_value(value, default):
+        if isinstance(value, str) and value.lower() == 'none':
+            return None
+        elif isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return default
+        return value
+
+    max_original_samples = convert_config_value(max_original_samples, 8000)
+    num_mixtures = convert_config_value(num_mixtures, 1000)
+    min_instruments = convert_config_value(min_instruments, 1)
+    max_instruments = convert_config_value(max_instruments, 2)
 
     print(f"Creating multilabel dataset with config:")
     print(f"  max_original_samples: {max_original_samples}")
@@ -133,7 +164,9 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
         original_dataset,
         num_new_samples=num_mixtures,
         min_instruments=min_instruments,
-        max_instruments=max_instruments
+        max_instruments=max_instruments,
+        use_weighted_targets=use_weighted_targets,
+        alpha=alpha
     )
 
     print(f"Created {len(mixed_dataset)} synthetic multi-label samples")
@@ -142,10 +175,19 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
     print("\nExample synthetic mixtures:")
     for i in range(min(3, len(mixed_dataset))):
         audio, labels = mixed_dataset[i]
-        active_labels = [LABELS[j] for j, val in enumerate(labels) if val == 1]
-        print(f"  Mix {i + 1}: Audio shape {audio.shape}, Labels: {active_labels}")
+
+        if use_weighted_targets:
+            # For weighted targets, show probabilities
+            top_indices = torch.topk(labels, min(3, len(labels))).indices
+            top_labels = [(LABELS[j], labels[j].item()) for j in top_indices]
+            print(f"  Mix {i + 1}: Audio shape {audio.shape}, Top weighted labels: {top_labels}")
+        else:
+            # For binary labels, show present instruments
+            active_labels = [LABELS[j] for j, val in enumerate(labels) if val == 1]
+            print(f"  Mix {i + 1}: Audio shape {audio.shape}, Labels: {active_labels}")
 
     return original_dataset, mixed_dataset
+
 
 def create_synthetic_mixtures(
     dataset,

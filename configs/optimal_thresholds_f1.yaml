@@ -1,0 +1,15 @@
+description: Optimal classification thresholds for each instrument (F1-maximizing)
+default_threshold: 0.5
+thresholds:
+  acoustic_guitar: 0.42
+  bass: 0.35
+  cello: 0.38
+  clarinet: 0.58
+  drums: 0.36
+  flute: 0.41
+  organ: 0.53
+  piano: 0.38
+  saxophone: 0.61
+  trumpet: 0.55
+  violin: 0.40
+  voice: 0.39

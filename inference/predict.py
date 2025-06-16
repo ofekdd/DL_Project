@@ -55,45 +55,16 @@ def load_model_from_checkpoint(ckpt_path, n_classes):
     Returns:
         Loaded model
     """
-    # Create model
-    model = MultiSTFTCNN(n_classes=n_classes)
-
-    # Load checkpoint
-    checkpoint = torch.load(ckpt_path, map_location="cpu")
-
-    # Extract state dict - handle both direct state_dict and PyTorch Lightning format
-    if "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-    else:
-        state_dict = checkpoint
-
-    # Remove "model." prefix if present (PyTorch Lightning adds this)
-    new_state_dict = {}
-    for key, value in state_dict.items():
-        if key.startswith("model."):
-            new_key = key[6:]  # Remove "model." prefix
-            new_state_dict[new_key] = value
-        else:
-            new_state_dict[key] = value
-
-    # Load the corrected state dict
-    try:
-        model.load_state_dict(new_state_dict, strict=True)
-        print("✅ Model loaded successfully with strict=True")
-    except RuntimeError as e:
-        print(f"⚠️ Strict loading failed, trying with strict=False: {e}")
-        model.load_state_dict(new_state_dict, strict=False)
-        print("✅ Model loaded with strict=False (some weights may be missing)")
-
-    return model
-
+    # Use the unified model loader
+    from utils.model_loader import load_model
+    return load_model(ckpt_path, n_classes=n_classes)
 
 def predict(model, wav_path, cfg):
     """
     Run inference on a single audio file.
 
     Args:
-        model: Trained MultiSTFTCNN model
+        model: Trained model (either MultiSTFTCNN or MultiSTFTCNN_WithPANNs)
         wav_path: Path to audio file
         cfg: Configuration dictionary
 
@@ -109,16 +80,25 @@ def predict(model, wav_path, cfg):
         # Model expects list of tensors as input
         preds = model(specs_list).squeeze()
 
-        # Apply sigmoid to get probabilities (since we're using BCELoss in training)
-        if len(preds.shape) > 0:  # Handle single sample case
-            preds = torch.sigmoid(preds).numpy()
+        # Check if the model already applies sigmoid (PANNs model does in its classifier)
+        # If model is MultiSTFTCNN_WithPANNs, it already has sigmoid in its classifier
+        if hasattr(model, 'feature_extractors'):
+            # PANNs-based model, sigmoid already applied
+            if len(preds.shape) > 0:  # Handle single sample case
+                preds = preds.numpy()
+            else:
+                preds = preds.unsqueeze(0).numpy()
         else:
-            preds = torch.sigmoid(preds.unsqueeze(0)).numpy()
+            # Regular MultiSTFTCNN model, apply sigmoid
+            if len(preds.shape) > 0:  # Handle single sample case
+                preds = torch.sigmoid(preds).numpy()
+            else:
+                preds = torch.sigmoid(preds.unsqueeze(0)).numpy()
 
     return {label: float(preds[i]) for i, label in enumerate(LABELS)}
 
 
-def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
+def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, threshold=0.6, thresholds=None):
     """
     Enhanced prediction function that can show ground truth labels.
 
@@ -127,14 +107,30 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
         wav_path: Path to wav file
         cfg: Configuration
         show_ground_truth: Whether to parse and show ground truth from filename
+        threshold: Default threshold for binary classification (default: 0.6)
+        thresholds: Optional dictionary mapping instrument names to thresholds
 
     Returns:
-        Dictionary with predictions and optionally ground truth
+        Dictionary with predictions, binary predictions, and optionally ground truth
     """
     # Get predictions
     predictions = predict(model, wav_path, cfg)
 
-    result = {"predictions": predictions}
+    # Apply threshold to get binary predictions (adaptive or fixed)
+    binary_predictions = {}
+    for label, score in predictions.items():
+        # Use instrument-specific threshold if available, otherwise use default
+        label_threshold = thresholds.get(label, threshold) if thresholds else threshold
+        binary_predictions[label] = 1 if score >= label_threshold else 0
+
+    active_instruments = [label for label, is_active in binary_predictions.items() if is_active == 1]
+
+    result = {
+        "predictions": predictions,
+        "binary_predictions": binary_predictions,
+        "active_instruments": active_instruments,
+        "threshold": threshold
+    }
 
     if show_ground_truth:
         # Parse ground truth from filename
@@ -160,8 +156,21 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
 
         result["ground_truth"] = ground_truth
 
-        # Calculate if prediction is correct (top prediction matches any ground truth)
+        # Calculate per-instrument accuracy
         if ground_truth:
+            # Create ground truth binary vector
+            gt_binary = {label: 1 if label in ground_truth else 0 for label in LABELS}
+
+            # Calculate per-instrument correctness
+            correct_predictions = sum(1 for label in LABELS
+                                    if binary_predictions[label] == gt_binary[label])
+
+            # Calculate overall sample accuracy
+            result["correct_count"] = correct_predictions
+            result["total_count"] = len(LABELS)
+            result["accuracy"] = correct_predictions / len(LABELS)
+
+            # Legacy 'correct' field (top prediction matches any ground truth)
             top_prediction = max(predictions.items(), key=lambda x: x[1])[0]
             result["correct"] = top_prediction in ground_truth
 

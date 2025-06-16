@@ -22,48 +22,9 @@ def load_model_from_checkpoint(ckpt_path, n_classes, cfg):
     """
     Improved model loading with better error handling.
     """
-    model = MultiSTFTCNN(
-        n_classes=n_classes,
-        n_branches=cfg.get('n_branches', 9),
-        branch_output_dim=cfg.get('branch_output_dim', 128)
-    )
-
-    checkpoint = torch.load(ckpt_path, map_location="cpu")
-
-    # Extract state dict
-    if "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-    else:
-        state_dict = checkpoint
-
-    # Remove "model." prefix if present
-    new_state_dict = {}
-    for key, value in state_dict.items():
-        if key.startswith("model."):
-            new_key = key[6:]  # Remove "model." prefix
-            new_state_dict[new_key] = value
-        else:
-            new_state_dict[key] = value
-
-    # Also remove num_batches_tracked which might cause issues
-    filtered_state_dict = {}
-    for key, value in new_state_dict.items():
-        if "num_batches_tracked" not in key:
-            filtered_state_dict[key] = value
-
-    try:
-        model.load_state_dict(filtered_state_dict, strict=True)
-        print("✅ Model loaded successfully with strict=True")
-    except RuntimeError as e:
-        print(f"⚠️ Strict loading failed: {e}")
-        try:
-            model.load_state_dict(filtered_state_dict, strict=False)
-            print("✅ Model loaded with strict=False")
-        except Exception as e2:
-            print(f"❌ Model loading failed completely: {e2}")
-            raise e2
-
-    return model
+    # Use the unified model loader
+    from utils.model_loader import load_model
+    return load_model(ckpt_path, cfg=cfg, n_classes=n_classes)
 
 
 def extract_ground_truth_from_filename(filename):
