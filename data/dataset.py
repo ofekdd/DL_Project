@@ -201,13 +201,17 @@ class MultiSTFTNpyDataset(Dataset):
             spec_path = audio_dir / f"{band_label}_fft{n_fft}.npy"
 
             if spec_path.exists():  #
-                spec = np.load(spec_path)
-                spec_tensor = torch.tensor(spec).unsqueeze(0)  # [1,H,W]
+                try:
+                    spec = np.load(spec_path)
+                except (ValueError, EOFError) as e:  # <- corrupt or half-written file
+                    print(f"⚠️  Corrupt spectrogram: {spec_path} – {e}")
+                    spec = np.zeros((10, 10), dtype=np.float32)  # fallback
             else:
                 print(f"Warning: Missing spectrogram for {spec_path}")
                 missing_files += 1
-                spec_tensor = torch.zeros(1, 10, 10)
+                spec = np.zeros((10, 10), dtype=np.float32)
 
+            spec_tensor = torch.tensor(spec).unsqueeze(0)  # [1,H,W]
             specs.append(spec_tensor)
 
         # Debug: Check if we have any valid labels
