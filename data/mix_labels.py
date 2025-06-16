@@ -165,8 +165,10 @@ def create_multilabel_dataset(irmas_root, cfg, max_original_samples=None, num_mi
         num_new_samples=num_mixtures,
         min_instruments=min_instruments,
         max_instruments=max_instruments,
-        use_weighted_targets=use_weighted_targets,
-        alpha=alpha
+        silence_ratio=0.02,
+        max_shift=1000,
+        gain_range=(0.8, 1.2),
+        target_peak=0.9
     )
 
     print(f"Created {len(mixed_dataset)} synthetic multi-label samples")
