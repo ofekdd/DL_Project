@@ -149,14 +149,14 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
     def __init__(self, n_classes, pretrained_path, freeze_backbone=True):
         super().__init__()
 
-        # Create 9 PANNs feature extractors (one per spectrogram)
+        # Create 3 PANNs feature extractors (one per spectrogram)
         self.feature_extractors = nn.ModuleList([
-            PANNsFeatureExtractor(pretrained_path) for _ in range(9)
+            PANNsFeatureExtractor(pretrained_path) for _ in range(3)
         ])
 
-        # Fusion layer to combine features from 9 spectrograms
+        # Fusion layer to combine features from 3 spectrograms
         self.fusion = nn.Sequential(
-            nn.Linear(9 * 512, 1024),  # 9 spectrograms × 512 features each
+            nn.Linear(3 * 512, 1024),  # 3 spectrograms × 512 features each
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(1024, 512),
@@ -190,10 +190,10 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
 
     def forward(self, spectrograms_list):
         """
-        Forward pass with list of 9 spectrograms.
+        Forward pass with list of 3 spectrograms.
 
         Args:
-            spectrograms_list: List of 9 tensors, each [batch, 1, freq, time]
+            spectrograms_list: List of 3 tensors, each [batch, 1, freq, time]
         """
         features = []
 
@@ -203,7 +203,7 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
             features.append(feat)
 
         # Concatenate all features
-        combined_features = torch.cat(features, dim=1)  # [batch, 9*512]
+        combined_features = torch.cat(features, dim=1)  # [batch, 3*512]
 
         # Fusion and classification
         fused = self.fusion(combined_features)  # [batch, 512]

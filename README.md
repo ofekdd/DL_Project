@@ -68,7 +68,7 @@ python -m inference.evaluate_model <checkpoint_path> <test_directory> --threshol
 ### PANNs-Enhanced Model
 
 - Uses AudioSet pretrained CNN14 backbone
-- 9 feature extractors with pretrained weights
+- 3 feature extractors with pretrained weights
 - Feature fusion and classification layers
 - Typically achieves 80%+ mAP with less training
 

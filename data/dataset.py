@@ -24,13 +24,13 @@ def pad_collate(batch):
 def multi_stft_pad_collate(batch):
     """
     Collate function for MultiSTFTNpyDataset.
-    Each item in batch is a list of 9 spectrograms and a label.
+    Each item in batch is a list of 3 spectrograms and a label.
     """
     # Unzip the batch into lists of spectrograms and labels
     specs_list, ys = zip(*batch)
 
-    # specs_list is now a tuple of lists, where each list contains 9 spectrograms
-    # We need to transpose this to get 9 lists, each containing a spectrogram from each item
+    # specs_list is now a tuple of lists, where each list contains 3 spectrograms
+    # We need to transpose this to get 3 lists, each containing a spectrogram from each item
     # This way we can pad each spectrogram type separately
     transposed_specs = list(zip(*specs_list))
 
@@ -58,7 +58,7 @@ def multi_stft_pad_collate(batch):
 
 class MultiSTFTNpyDataset(Dataset):
     """
-    Dataset for loading all 9 spectrograms (3 window sizes × 3 frequency bands) for each audio file.
+    Dataset for loading all 3 spectrograms (optimized window sizes for each frequency band) for each audio file.
     """
 
     def __init__(self, root, max_samples=None):
@@ -188,7 +188,7 @@ class MultiSTFTNpyDataset(Dataset):
             if label in self.label_map:
                 y[self.label_map[label]] = 1
 
-        # Load all 9 spectrograms
+        # Load all 3 spectrograms
         specs = []
         missing_files = 0
         optimized_stfts = [
@@ -215,7 +215,7 @@ class MultiSTFTNpyDataset(Dataset):
             print(f"Warning: No valid labels found for {folder_name}")
 
         if missing_files > 0:
-            print(f"Warning: {missing_files}/9 spectrograms missing for {folder_name}")
+            print(f"Warning: {missing_files}/3 spectrograms missing for {folder_name}")
 
         return specs, y
 
