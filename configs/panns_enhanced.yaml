@@ -8,7 +8,7 @@ num_epochs: 15  # Extended for two-phase training
 num_workers: 2
 
 # PANNs-specific settings
-freeze_epochs: 1  # Initial epochs with frozen backbone
+freeze_epochs: 2  # Initial epochs with frozen backbone
 frozen_learning_rate: 0.001  # Higher LR when backbone frozen
 finetune_learning_rate: 0.0001  # Lower LR for fine-tuning
 
@@ -18,8 +18,9 @@ gamma_neg: 4         # down-weight easy negatives
 neg_clip: 0.05       # clip for very easy negatives
 
 # Training efficiency settings
-limit_val_batches: 1  # Use all validation data for reliable metrics
+limit_val_batches: 1.0  # Use all validation data for reliable metrics
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup
+check_val_every_n_epoch: 2
 
 # Dataset creation settings
 max_original_samples: null  # Use all original samples

@@ -57,9 +57,27 @@ class PANNsLitModel(pl.LightningModule):
     def common_step(self, batch, stage):
         x, y = batch
         logits = self(x)
-        loss = self.criterion(logits, y.float())      # ← replace BCE
-        metrics = self.metrics(torch.sigmoid(logits), y)
-        self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}}, prog_bar=True)
+        loss = self.criterion(logits, y.float())
+
+        # ── existing macro metrics ─────────────────────────────
+        probs = torch.sigmoid(logits)
+        metrics = self.metrics(probs, y)
+
+        # ── NEW: class-wise Average Precision ─────────────────
+        # 1. `metrics` (MetricCollection) keeps an internal buffer
+        #    and exposes AP per class at any moment via .ap_per_class().
+        # 2. We convert it to a dict {class_name: value}.
+        ap_dict = {f"AP_{c}": ap for c, ap in metrics.ap_per_class().items()}
+
+        # ── single combined logging call ───────────────────────
+        self.log_dict(
+            {f"{stage}/loss": loss,
+             **{f"{stage}/{k}": v for k, v in metrics.items()},  # macro mAP, F1 …
+             **{f"{stage}/{k}": v for k, v in ap_dict.items()}  # NEW per-class AP
+             },
+            prog_bar=True
+        )
+
         return loss
 
     def training_step(self, batch, _):
@@ -127,7 +145,8 @@ def main(config):
         ModelCheckpoint(
             monitor='val/mAP',
             mode='max',
-            save_top_k=1,
+            save_top_k=3,
+            save_last=True,
             filename='panns-{epoch:02d}-{val_mAP:.3f}'
         )
     ]
@@ -147,6 +166,10 @@ def main(config):
     if 'num_sanity_val_steps' in cfg:
         trainer_kwargs['num_sanity_val_steps'] = cfg['num_sanity_val_steps']
         print(f"Using {cfg['num_sanity_val_steps']} sanity validation steps")
+
+    if 'check_val_every_n_epoch' in cfg:
+        trainer_kwargs['check_val_every_n_epoch'] = cfg['check_val_every_n_epoch']
+        print(f"Running full validation every {cfg['check_val_every_n_epoch']} epoch(s)")
 
     # Create trainer
     trainer = pl.Trainer(**trainer_kwargs)
