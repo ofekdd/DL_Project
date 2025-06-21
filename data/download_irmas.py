@@ -12,6 +12,7 @@ import zipfile
 
 import librosa
 import torch
+from pathlib import Path
 
 from var import LABELS, IRMAS_TO_LABEL_MAP
 
@@ -30,6 +31,25 @@ def md5(fname, chunk=2 ** 20):
             m.update(data)
     return m.hexdigest()
 
+def _pick_training_root(p: Path) -> Path:
+    """Return a path that actually contains WAVs for TRAINING data."""
+    for cand in [p, p / "IRMAS-TrainingData"]:
+        if cand.exists() and any(cand.rglob("*.wav")):
+            return cand
+    raise FileNotFoundError("No WAVs under training root candidates:", [str(p)])
+
+def _pick_testing_root(p: Path) -> Path:
+    """Return a path that actually contains WAVs for TESTING data."""
+    # 1) caller gave us a part folder (…/IRMAS-TestingData-Part1)
+    if (p / "IRMAS-TestingData").exists():
+        p = p / "IRMAS-TestingData"
+    # 2) caller gave us base_root (…/IRMAS)
+    elif (p / "IRMAS-TestingData").exists():
+        p = p / "IRMAS-TestingData"
+    # 3) final sanity check
+    if not any(p.rglob("*.wav")):
+        raise FileNotFoundError(f"No WAVs found under {p}")
+    return p
 
 def download_and_extract_zip(url: str, out_path: pathlib.Path):
     zip_path = out_path / url.split("/")[-1].split("?")[0]
@@ -117,7 +137,7 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
     """
     Load training (single-label) audio from IRMAS dataset.
     """
-    irmas_path = pathlib.Path(irmas_root) / "IRMAS-TrainingData"
+    irmas_path = _pick_training_root(Path(irmas_root))
     label_map = {label: i for i, label in enumerate(LABELS)}
     dataset = []
 
@@ -158,7 +178,7 @@ def load_irmas_testing_dataset(test_dir, cfg):
     Load testing (multi-label) IRMAS dataset.
     Each audio file has a corresponding .txt file listing instruments.
     """
-    test_path = pathlib.Path(test_dir) / "IRMAS-TestingData"
+    test_path = _pick_testing_root(Path(test_dir))
     label_map = {label: i for i, label in enumerate(LABELS)}
     dataset = []
 
