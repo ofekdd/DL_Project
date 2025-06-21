@@ -39,17 +39,29 @@ def _pick_training_root(p: Path) -> Path:
     raise FileNotFoundError("No WAVs under training root candidates:", [str(p)])
 
 def _pick_testing_root(p: Path) -> Path:
-    """Return a path that actually contains WAVs for TESTING data."""
-    # 1) caller gave us a part folder (…/IRMAS-TestingData-Part1)
-    if (p / "IRMAS-TestingData").exists():
-        p = p / "IRMAS-TestingData"
-    # 2) caller gave us base_root (…/IRMAS)
-    elif (p / "IRMAS-TestingData").exists():
-        p = p / "IRMAS-TestingData"
-    # 3) final sanity check
-    if not any(p.rglob("*.wav")):
-        raise FileNotFoundError(f"No WAVs found under {p}")
-    return p
+    """
+    Return a path that *really* contains the testing WAV-and-TXT pairs.
+    Accepts:
+        • …/IRMAS-TestingData-Part1
+        • …/IRMAS-TestingData      (single-folder variant)
+        • …/IRMAS                  (base)  ← only if that has the testing folder
+    """
+    # case 1: caller already gave the right folder
+    if any(p.glob("*.txt")) and any(p.glob("*.wav")):
+        return p
+
+    # case 2: base_root → jump into the main testing folder
+    for cand in [
+        p / "IRMAS-TestingData",
+        p / "IRMAS-TestingData-Part1",
+        p / "IRMAS-TestingData-Part2",
+        p / "IRMAS-TestingData-Part3",
+    ]:
+        if cand.exists() and any(cand.rglob("*.txt")):
+            return cand
+
+    raise FileNotFoundError(f"Could not locate testing data under {p}")
+
 
 def download_and_extract_zip(url: str, out_path: pathlib.Path):
     zip_path = out_path / url.split("/")[-1].split("?")[0]
@@ -155,8 +167,8 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
 
     for wav_file in wav_files:
         try:
-            irmas_label = wav_file.parent.name
-            our_label = IRMAS_TO_LABEL_MAP.get(irmas_label)
+            irmas_label = wav_file.parent.name.lower()
+            our_label = IRMAS_TO_LABEL_MAP.get(irmas_label, irmas_label)
 
             if our_label not in label_map:
                 continue
@@ -183,7 +195,14 @@ def load_irmas_testing_dataset(test_dir, cfg):
     dataset = []
 
     wav_files = list(test_path.rglob("*.wav"))
-    print(f"Loading {len(wav_files)} testing audio files...")
+
+    cap = cfg.get("max_test_samples")
+    if cap is not None and len(wav_files) > cap:
+        random.shuffle(wav_files)
+        wav_files = wav_files[:cap]
+        print(f"⚖️  Capped to {cap} test WAVs for quick run")
+
+    print(f"Loading {len(wav_files)} testing audio files…")
 
     for wav_file in wav_files:
         try:
