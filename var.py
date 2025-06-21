@@ -11,3 +11,18 @@ optimized_stfts = [
     ("1000-4000Hz", 512),
     ("4000-11025Hz", 256),
 ]
+
+# IRMAS label mappings
+IRMAS_TO_LABEL_MAP = {
+    'cel': 'cello',
+    'cla': 'clarinet',
+    'flu': 'flute',
+    'gac': 'acoustic_guitar',
+    'gel': 'acoustic_guitar',
+    'org': 'organ',
+    'pia': 'piano',
+    'sax': 'saxophone',
+    'tru': 'trumpet',
+    'vio': 'violin',
+    'voi': 'voice'
+}
