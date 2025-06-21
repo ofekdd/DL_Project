@@ -25,3 +25,4 @@ original_data_percentage: 1.0  # Use all original IRMAS data
 
 # Training dataset settings
 max_samples: None  # Maximum samples to use for training (None for all)
+max_test_samples: 50

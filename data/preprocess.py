@@ -138,8 +138,7 @@ def preprocess_data(irmas_root, out_dir, cfg, original_data_percentage=1.0):
     # 2) TEST  (all IRMAS-TestingData* folders)  – 100 %
     # --------------------------------------------------------------------- #
     test_roots = [
-        p
-        for p in irmas_root.glob("IRMAS-TestingData*")
+        p for p in irmas_root.glob("IRMAS-TestingData*")
         if p.is_dir() and any(p.rglob("*.wav"))
     ]
     if not test_roots:
@@ -149,6 +148,13 @@ def preprocess_data(irmas_root, out_dir, cfg, original_data_percentage=1.0):
             itertools.chain.from_iterable(tr.rglob("*.wav") for tr in test_roots)
         )
         print(f"🎯 Found {len(test_wavs)} testing wavs across {len(test_roots)} parts.")
+
+        # NEW ▸ quick-run cap
+        cap = cfg.get("max_test_samples")
+        if cap is not None and len(test_wavs) > cap:
+            random.shuffle(test_wavs)
+            test_wavs = test_wavs[:cap]
+            print(f"⚖️  Capping test set to {cap} samples (quick-run mode)")
 
         for i, wav in enumerate(tqdm(test_wavs, desc="→ test")):
             try:
