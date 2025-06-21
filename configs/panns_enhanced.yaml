@@ -17,12 +17,12 @@ limit_val_batches: 1  # Use all validation data for reliable metrics
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup
 
 # Dataset creation settings
-max_original_samples: None  # Use all original samples
+max_original_samples: null  # Use all original samples
 num_mixtures: 0  # Create synthetic mixtures
 min_instruments: 1  # Minimum instruments per mixture
 max_instruments: 2  # Maximum instruments per mixture
 original_data_percentage: 1  # Use all original IRMAS data
 
 # Training dataset settings
-max_samples: None  # Maximum samples to use for training (None for all)
-max_test_samples: None
+max_samples: null  # Maximum samples to use for training (None for all)
+max_test_samples: null
