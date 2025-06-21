@@ -12,6 +12,11 @@ freeze_epochs: 1  # Initial epochs with frozen backbone
 frozen_learning_rate: 0.001  # Higher LR when backbone frozen
 finetune_learning_rate: 0.0001  # Lower LR for fine-tuning
 
+# ASL function settings
+gamma_pos: 0         # keep positives unchanged
+gamma_neg: 4         # down-weight easy negatives
+neg_clip: 0.05       # clip for very easy negatives
+
 # Training efficiency settings
 limit_val_batches: 1  # Use all validation data for reliable metrics
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup

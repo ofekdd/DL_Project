@@ -4,8 +4,13 @@ import argparse, yaml, torch, librosa, numpy as np, pathlib
 
 from data.preprocess import generate_multi_stft
 from models.multi_stft_cnn import MultiSTFTCNN
-from var import LABELS, n_ffts, band_ranges_as_tuples
+from var import LABELS, n_ffts, band_ranges_as_tuples, IRMAS_TO_LABEL_MAP
 
+def safe_sigmoid(logits):
+    """If logits already look like probabilities (0-1), return as-is."""
+    if logits.min() >= 0 and logits.max() <= 1:
+        return logits
+    return torch.sigmoid(logits)
 
 def extract_features(path, cfg):
     """
@@ -60,119 +65,56 @@ def load_model_from_checkpoint(ckpt_path, n_classes):
     return load_model(ckpt_path, n_classes=n_classes)
 
 def predict(model, wav_path, cfg):
-    """
-    Run inference on a single audio file.
-
-    Args:
-        model: Trained model (either MultiSTFTCNN or MultiSTFTCNN_WithPANNs)
-        wav_path: Path to audio file
-        cfg: Configuration dictionary
-
-    Returns:
-        Dictionary mapping label names to prediction scores
-    """
     model.eval()
-
-    # Extract features as list of 3 spectrograms
-    specs_list = extract_features(wav_path, cfg)
-
+    specs = extract_features(wav_path, cfg)
     with torch.no_grad():
-        # Model expects list of tensors as input
-        preds = model(specs_list).squeeze()
+        logits = model(specs).squeeze()
+        probs  = safe_sigmoid(logits).cpu().numpy()
+    return {lab: float(probs[i]) for i, lab in enumerate(LABELS)}
 
-        # Check if the model already applies sigmoid (PANNs model does in its classifier)
-        # If model is MultiSTFTCNN_WithPANNs, it already has sigmoid in its classifier
-        if hasattr(model, 'feature_extractors'):
-            # PANNs-based model, sigmoid already applied
-            if len(preds.shape) > 0:  # Handle single sample case
-                preds = preds.numpy()
-            else:
-                preds = preds.unsqueeze(0).numpy()
-        else:
-            # Regular MultiSTFTCNN model, apply sigmoid
-            if len(preds.shape) > 0:  # Handle single sample case
-                preds = torch.sigmoid(preds).numpy()
-            else:
-                preds = torch.sigmoid(preds.unsqueeze(0)).numpy()
-
-    return {label: float(preds[i]) for i, label in enumerate(LABELS)}
-
-
-def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, threshold=0.6, thresholds=None):
-    """
-    Enhanced prediction function that can show ground truth labels.
-
-    Args:
-        model: Trained model
-        wav_path: Path to wav file
-        cfg: Configuration
-        show_ground_truth: Whether to parse and show ground truth from filename
-        threshold: Default threshold for binary classification (default: 0.6)
-        thresholds: Optional dictionary mapping instrument names to thresholds
-
-    Returns:
-        Dictionary with predictions, binary predictions, and optionally ground truth
-    """
-    # Get predictions
-    predictions = predict(model, wav_path, cfg)
-
-    # Apply threshold to get binary predictions (adaptive or fixed)
-    binary_predictions = {}
-    for label, score in predictions.items():
-        # Use instrument-specific threshold if available, otherwise use default
-        label_threshold = thresholds.get(label, threshold) if thresholds else threshold
-        binary_predictions[label] = 1 if score >= label_threshold else 0
-
-    active_instruments = [label for label, is_active in binary_predictions.items() if is_active == 1]
-
-    result = {
-        "predictions": predictions,
-        "binary_predictions": binary_predictions,
-        "active_instruments": active_instruments,
-        "threshold": threshold
+def apply_thresholds(preds, default=0.5, table=None):
+    """Return binary vector + active label list."""
+    bin_vec = {
+        lab: 1 if score >= (table.get(lab, default) if table else default) else 0
+        for lab, score in preds.items()
     }
+    active = [lab for lab, v in bin_vec.items() if v]
+    return bin_vec, active
 
-    if show_ground_truth:
-        # Parse ground truth from filename
-        filename = pathlib.Path(wav_path).name
+def predict_with_ground_truth(model, wav_path, cfg,
+                              threshold=0.5, thresholds=None, show_gt=True):
+    preds = predict(model, wav_path, cfg)
+    bin_vec, active = apply_thresholds(preds, threshold, thresholds)
+    result = dict(predictions=preds,
+                  binary_predictions=bin_vec,
+                  active_instruments=active,
+                  threshold=threshold)
 
-        # IRMAS label mapping
-        irmas_to_label = {
-            'cel': 'cello', 'cla': 'clarinet', 'flu': 'flute',
-            'gac': 'acoustic_guitar', 'gel': 'acoustic_guitar',
-            'org': 'organ', 'pia': 'piano', 'sax': 'saxophone',
-            'tru': 'trumpet', 'vio': 'violin', 'voi': 'voice'
-        }
+    if show_gt:
+        # same filename-parsing logic as before
+        fname = pathlib.Path(wav_path).name
+        gt = [IRMAS_TO_LABEL_MAP[x] for x in
+              __import__("re").findall(r"\[([a-z]{3})\]", fname)
+              if x in IRMAS_TO_LABEL_MAP]
+        # after parsing brackets into `ground_truth` …
+        if not gt:
+            txt = pathlib.Path(wav_path).with_suffix(".txt")
+            if txt.exists():
+                with open(txt) as fh:
+                    for line in fh:
+                        lab = line.strip().lower()
+                        mapped = IRMAS_TO_LABEL_MAP.get(lab, lab)
+                        if mapped in LABELS:
+                            gt.append(mapped)
 
-        # Extract labels from filename like [sax][jaz_blu]1737__1.wav
-        import re
-        irmas_pattern = r'\[([a-z]{3})\]'
-        irmas_matches = re.findall(irmas_pattern, filename)
-
-        ground_truth = []
-        for irmas_label in irmas_matches:
-            if irmas_label in irmas_to_label:
-                ground_truth.append(irmas_to_label[irmas_label])
-
-        result["ground_truth"] = ground_truth
-
-        # Calculate per-instrument accuracy
-        if ground_truth:
-            # Create ground truth binary vector
-            gt_binary = {label: 1 if label in ground_truth else 0 for label in LABELS}
-
-            # Calculate per-instrument correctness
-            correct_predictions = sum(1 for label in LABELS
-                                    if binary_predictions[label] == gt_binary[label])
-
-            # Calculate overall sample accuracy
-            result["correct_count"] = correct_predictions
-            result["total_count"] = len(LABELS)
-            result["accuracy"] = correct_predictions / len(LABELS)
-
-            # Legacy 'correct' field (top prediction matches any ground truth)
-            top_prediction = max(predictions.items(), key=lambda x: x[1])[0]
-            result["correct"] = top_prediction in ground_truth
+        result["ground_truth"] = gt
+        if gt:
+            correct = max(preds, key=preds.get) in gt
+            result["correct"] = correct
+            correct_bits = sum(
+                1 for lab in LABELS if bin_vec[lab] == (lab in gt)
+            )
+            result["accuracy"] = correct_bits / len(LABELS)
 
     return result
 

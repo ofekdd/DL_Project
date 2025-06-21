@@ -6,6 +6,7 @@ import yaml
 import argparse
 from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping, ModelCheckpoint
 
+from losses.asymmetric_loss import AsymmetricLoss
 from models.panns_enhanced import MultiSTFTCNN_WithPANNs
 from training.callbacks import default_callbacks
 from training.metrics import MetricCollection
@@ -34,6 +35,12 @@ class PANNsLitModel(pl.LightningModule):
             freeze_backbone=True
         )
 
+        self.criterion = AsymmetricLoss(
+            gamma_pos=cfg.get("gamma_pos", 0),
+            gamma_neg=cfg.get("gamma_neg", 4),
+            clip=cfg.get("neg_clip", 0.05),
+        )
+
         # Setup metrics
         self.metrics = MetricCollection(n_classes)
 
@@ -49,14 +56,10 @@ class PANNsLitModel(pl.LightningModule):
 
     def common_step(self, batch, stage):
         x, y = batch
-        preds = self(x)
-        # Convert y to float for binary_cross_entropy
-        y_float = y.float()
-        loss = torch.nn.functional.binary_cross_entropy(preds, y_float)
-        # Calculate metrics
-        metrics = self.metrics(preds, y)
-        self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}},
-                      prog_bar=True)
+        logits = self(x)
+        loss = self.criterion(logits, y.float())      # ← replace BCE
+        metrics = self.metrics(torch.sigmoid(logits), y)
+        self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}}, prog_bar=True)
         return loss
 
     def training_step(self, batch, _):
