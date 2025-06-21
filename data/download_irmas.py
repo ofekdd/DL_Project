@@ -32,11 +32,19 @@ def md5(fname, chunk=2 ** 20):
     return m.hexdigest()
 
 def _pick_training_root(p: Path) -> Path:
-    """Return a path that actually contains WAVs for TRAINING data."""
-    for cand in [p, p / "IRMAS-TrainingData"]:
-        if cand.exists() and any(cand.rglob("*.wav")):
-            return cand
-    raise FileNotFoundError("No WAVs under training root candidates:", [str(p)])
+    """
+    Return the IRMAS-TrainingData folder (never the base folder).
+    """
+    # caller already gave the exact folder
+    if p.name == "IRMAS-TrainingData":
+        return p
+
+    # otherwise look *only* for that child
+    cand = p / "IRMAS-TrainingData"
+    if cand.exists() and any(cand.rglob("*.wav")):
+        return cand
+
+    raise FileNotFoundError(f"No training WAVs found under {p}")
 
 def _pick_testing_root(p: Path) -> Path:
     """
@@ -197,6 +205,7 @@ def load_irmas_testing_dataset(test_dir, cfg):
     wav_files = list(test_path.rglob("*.wav"))
 
     cap = cfg.get("max_test_samples")
+    cap = None if cap in (None, "None") else int(cap)
     if cap is not None and len(wav_files) > cap:
         random.shuffle(wav_files)
         wav_files = wav_files[:cap]
