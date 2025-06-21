@@ -138,11 +138,13 @@ def preprocess_data(irmas_root, out_dir, cfg, original_data_percentage=1.0):
     # 2) TEST  (all IRMAS-TestingData* folders)  – 100 %
     # --------------------------------------------------------------------- #
     test_roots = [
-        p for p in irmas_root.glob("IRMAS-TestingData*")
+        p for p in irmas_root.glob("IRMAS-TestingData-Part*")
         if p.is_dir() and any(p.rglob("*.wav"))
     ]
     if not test_roots:
-        print("⚠️  No IRMAS-TestingData folders found – skipping test split.")
+        sf = irmas_root / "IRMAS-TestingData"
+        if sf.exists():
+            test_roots = [sf]
     else:
         test_wavs = list(
             itertools.chain.from_iterable(tr.rglob("*.wav") for tr in test_roots)
