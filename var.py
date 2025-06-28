@@ -1,6 +1,9 @@
 
 
-LABELS = ["cello", "clarinet", "flute", "acoustic_guitar", "organ", "piano", "saxophone", "trumpet", "violin", "voice", "other"]
+LABELS = ['accordion', 'banjo', 'bass', 'celesta', 'clarinet', 'cymbals', 'drums',
+ 'electric_bass', 'flute', 'guitar', 'mallet_percussion', 'organ', 'piano',
+ 'reed_instrument', 'saxophone', 'synthesizer', 'trombone', 'trumpet',
+ 'violin', 'voice']
 
 band_ranges = ["0-1000Hz", "1000-4000Hz", "4000-11025Hz"]
 band_ranges_as_tuples = [(0, 1000), (1000, 4000), (4000, 11025)]
