@@ -130,12 +130,12 @@ def main(config):
     # Setup callbacks with extended patience for the two-phase training
     callbacks = [
         LearningRateMonitor(logging_interval='epoch'),
-        EarlyStopping(monitor='val/mAP', mode='max', patience=8),  # More patience for two-phase training
+        EarlyStopping(monitor='val/F1', mode='max', patience=8),  # More patience for two-phase training
         ModelCheckpoint(
-            monitor='val/mAP',
+            monitor='val/F1',
             mode='max',
             save_top_k=1,
-            filename='panns-{epoch:02d}-{val_mAP:.3f}'
+            filename='panns-{epoch:02d}-{val_F1:.3f}'
         )
     ]
 
