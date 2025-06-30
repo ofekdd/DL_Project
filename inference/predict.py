@@ -64,58 +64,42 @@ def predict(model, wav_path, cfg):
 
     with torch.no_grad():
         # Model expects list of tensors as input
-        preds = model(specs_list).squeeze()
+        logits = model(specs_list).squeeze()
 
-        # Check if the model already applies sigmoid (PANNs model does in its classifier)
-        # If model is MultiSTFTCNN_WithPANNs, it already has sigmoid in its classifier
-        if hasattr(model, 'feature_extractors'):
-            # PANNs-based model, sigmoid already applied
-            if len(preds.shape) > 0:  # Handle single sample case
-                preds = preds.numpy()
-            else:
-                preds = preds.unsqueeze(0).numpy()
+        # For single-label classification, apply softmax to get probabilities
+        if len(logits.shape) > 0:  # Handle single sample case
+            probs = torch.nn.functional.softmax(logits, dim=0).numpy()
         else:
-            # Regular MultiSTFTCNN model, apply sigmoid
-            if len(preds.shape) > 0:  # Handle single sample case
-                preds = torch.sigmoid(preds).numpy()
-            else:
-                preds = torch.sigmoid(preds.unsqueeze(0)).numpy()
+            probs = torch.nn.functional.softmax(logits.unsqueeze(0), dim=1).squeeze(0).numpy()
 
-    return {label: float(preds[i]) for i, label in enumerate(LABELS)}
+    return {label: float(probs[i]) for i, label in enumerate(LABELS)}
 
 
-def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, threshold=0.6, thresholds=None):
+def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
     """
     Enhanced prediction function that can show ground truth labels.
+    For single-label classification, we pick the most dominant instrument.
 
     Args:
         model: Trained model
         wav_path: Path to wav file
         cfg: Configuration
         show_ground_truth: Whether to parse and show ground truth from filename
-        threshold: Default threshold for binary classification (default: 0.6)
-        thresholds: Optional dictionary mapping instrument names to thresholds
 
     Returns:
-        Dictionary with predictions, binary predictions, and optionally ground truth
+        Dictionary with predictions and optionally ground truth
     """
-    # Get predictions
+    # Get predictions (softmax probabilities)
     predictions = predict(model, wav_path, cfg)
 
-    # Apply threshold to get binary predictions (adaptive or fixed)
-    binary_predictions = {}
-    for label, score in predictions.items():
-        # Use instrument-specific threshold if available, otherwise use default
-        label_threshold = thresholds.get(label, threshold) if thresholds else threshold
-        binary_predictions[label] = 1 if score >= label_threshold else 0
-
-    active_instruments = [label for label, is_active in binary_predictions.items() if is_active == 1]
+    # Get the top prediction (most dominant instrument)
+    top_prediction = max(predictions.items(), key=lambda x: x[1])[0]
+    top_score = predictions[top_prediction]
 
     result = {
         "predictions": predictions,
-        "binary_predictions": binary_predictions,
-        "active_instruments": active_instruments,
-        "threshold": threshold
+        "top_prediction": top_prediction,
+        "top_score": top_score
     }
 
     if show_ground_truth:
@@ -142,23 +126,11 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, thre
 
         result["ground_truth"] = ground_truth
 
-        # Calculate per-instrument accuracy
+        # For testing dataset, ground truth could have multiple labels
+        # Consider prediction correct if it matches any of the ground truth labels
         if ground_truth:
-            # Create ground truth binary vector
-            gt_binary = {label: 1 if label in ground_truth else 0 for label in LABELS}
-
-            # Calculate per-instrument correctness
-            correct_predictions = sum(1 for label in LABELS
-                                    if binary_predictions[label] == gt_binary[label])
-
-            # Calculate overall sample accuracy
-            result["correct_count"] = correct_predictions
-            result["total_count"] = len(LABELS)
-            result["accuracy"] = correct_predictions / len(LABELS)
-
-            # Legacy 'correct' field (top prediction matches any ground truth)
-            top_prediction = max(predictions.items(), key=lambda x: x[1])[0]
             result["correct"] = top_prediction in ground_truth
+            result["accuracy"] = 1.0 if result["correct"] else 0.0
 
     return result
 
@@ -179,17 +151,22 @@ def main(ckpt, wav, config):
     if "ground_truth" in result:
         print(f"🎯 Ground truth: {result['ground_truth']}")
 
-    print(f"📊 Predictions:")
+    print(f"🎺 Top prediction: {result['top_prediction']} ({result['top_score']:.4f})")
+
+    print(f"📊 All predictions (sorted):")
     predictions = result["predictions"]
     sorted_preds = sorted(predictions.items(), key=lambda x: x[1], reverse=True)
 
     for label, score in sorted_preds:
-        icon = "🔥" if score > 0.5 else "🔸"
+        # Highlight the top prediction
+        icon = "🔥" if label == result['top_prediction'] else "🔸"
         print(f"  {icon} {label:<15} {score:.4f}")
 
     if "correct" in result:
         status = "✅ CORRECT" if result["correct"] else "❌ INCORRECT"
-        print(f"🎯 Top prediction: {status}")
+        print(f"🎯 Evaluation: {status}")
+        if result["correct"]:
+            print(f"   (Top prediction matches one of the ground truth labels)")
 
     print("=" * 50)
 

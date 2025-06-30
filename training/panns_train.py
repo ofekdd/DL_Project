@@ -50,11 +50,21 @@ class PANNsLitModel(pl.LightningModule):
     def common_step(self, batch, stage):
         x, y = batch
         preds = self(x)
-        # Convert y to float for binary_cross_entropy
-        y_float = y.float()
-        loss = torch.nn.functional.binary_cross_entropy(preds, y_float)
+        # For single-label classification, we use cross_entropy loss
+        # which expects raw logits (before softmax) and class indices
+
+        # Get the target class index (argmax of one-hot vector)
+        target_classes = torch.argmax(y, dim=1)
+
+        # Use cross_entropy loss which applies softmax internally
+        loss = torch.nn.functional.cross_entropy(preds, target_classes)
+
+        # Apply softmax to get probabilities for metrics
+        probs = torch.nn.functional.softmax(preds, dim=1)
+
         # Calculate metrics
-        metrics = self.metrics(preds, y)
+        metrics = self.metrics(probs, y)
+
         self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}},
                       prog_bar=True)
         return loss
