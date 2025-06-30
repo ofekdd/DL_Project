@@ -1,25 +1,23 @@
-# 9CNN model configuration
+# 3CNN model configuration
 model_name: multi_stft_cnn
 sample_rate: 22050
 n_mels: 64
 hop_length: 512
-batch_size: 8  # Smaller batch size due to higher memory requirements
-num_epochs: 1
-learning_rate: 2e-4  # Adjusted learning rate for 9CNN
+batch_size: 16  # Smaller batch size due to higher memory requirements
+num_epochs: 15
+learning_rate: 2e-4  # Adjusted learning rate for 3CNN
 num_workers: 2
-n_branches: 3  # Number of branches in the 9CNN model (3 window sizes × 3 frequency bands)
+n_branches: 3  # Number of branches in the 3CNN model
 branch_output_dim: 128  # Output dimension of each branch
 
 # Training efficiency settings
-limit_val_batches: 0.1  # Use only 10% of validation data for faster training (1.0 = 100%)
+limit_val_batches: 1  # Use only 10% of validation data for faster training (1.0 = 100%)
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup
 
 # Dataset creation settings
-max_original_samples: 50  # Limit original samples to avoid memory issues
-num_mixtures: 10000  # Create 10000 synthetic mixtures
-min_instruments: 1  # Minimum instruments per mixture
-max_instruments: 3  # Maximum instruments per mixture
-original_data_percentage: 0.1  # Use only 10% of original IRMAS data for preprocessing
+max_original_samples: null  # Use all original samples
+original_data_percentage: 1  # Use all original IRMAS data
 
 # Training dataset settings
-max_samples: 50  # Maximum samples to use for training (None for all)
+max_samples: null  # Maximum samples to use for training (None for all)
+max_test_samples: null # Maximum samples to use for testing (None for all)
