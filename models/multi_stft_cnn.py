@@ -24,10 +24,8 @@ class MultiSTFTCNN(nn.Module):
         self.branches = nn.ModuleList([
             STFTBranch(out_features=branch_output_dim) for _ in range(n_branches)
         ])
-        self.classifier = nn.Sequential(
-            nn.Linear(n_branches * branch_output_dim, n_classes),
-            nn.Sigmoid()  # multi-label
-        )
+        # Output logits for BCE with logits loss
+        self.classifier = nn.Linear(n_branches * branch_output_dim, n_classes)
 
     def forward(self, x_list):
         """

@@ -78,7 +78,7 @@ def predict(model, wav_path, cfg):
 def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
     """
     Enhanced prediction function that can show ground truth labels.
-    For single-label classification, we pick the most dominant instrument.
+    Uses softmax to pick the most likely instrument.
 
     Args:
         model: Trained model
@@ -92,7 +92,7 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
     # Get predictions (softmax probabilities)
     predictions = predict(model, wav_path, cfg)
 
-    # Get the top prediction (most dominant instrument)
+    # Get the top prediction (most likely instrument)
     top_prediction = max(predictions.items(), key=lambda x: x[1])[0]
     top_score = predictions[top_prediction]
 
@@ -153,7 +153,7 @@ def main(ckpt, wav, config):
 
     print(f"🎺 Top prediction: {result['top_prediction']} ({result['top_score']:.4f})")
 
-    print(f"📊 All predictions (sorted):")
+    print(f"📊 All predictions (sorted by softmax probability):")
     predictions = result["predictions"]
     sorted_preds = sorted(predictions.items(), key=lambda x: x[1], reverse=True)
 
