@@ -27,21 +27,22 @@ class LitModel(pl.LightningModule):
 
     def common_step(self, batch, stage):
         x, y = batch
-        preds = self(x)
-        # For single-label classification, we use cross_entropy loss
-        # which expects raw logits (before softmax) and class indices
+        logits = self(x)
 
-        # Get the target class index (argmax of one-hot vector)
-        target_classes = torch.argmax(y, dim=1)
+        # For single-label classification, use cross-entropy loss
+        # Convert multi-hot targets to class indices if needed
+        if y.dim() > 1 and y.size(1) > 1:  # Multi-hot encoded
+            target_classes = torch.argmax(y, dim=1)  # Get the dominant instrument
+        else:  # Already single-label format
+            target_classes = y
 
-        # Use cross_entropy loss which applies softmax internally
-        loss = torch.nn.functional.cross_entropy(preds, target_classes)
+        loss = torch.nn.functional.cross_entropy(logits, target_classes)
 
         # Apply softmax to get probabilities for metrics
-        probs = torch.nn.functional.softmax(preds, dim=1)
+        probs = torch.nn.functional.softmax(logits, dim=1)
 
         # Calculate metrics
-        metrics = self.metrics(probs, y)
+        metrics = self.metrics(probs, target_classes)
 
         self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}},
                       prog_bar=True)

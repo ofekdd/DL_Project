@@ -78,7 +78,7 @@ def predict(model, wav_path, cfg):
 def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
     """
     Enhanced prediction function that can show ground truth labels.
-    For single-label classification, we pick the most dominant instrument.
+    Uses softmax to pick the most likely instrument.
 
     Args:
         model: Trained model
@@ -92,7 +92,7 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
     # Get predictions (softmax probabilities)
     predictions = predict(model, wav_path, cfg)
 
-    # Get the top prediction (most dominant instrument)
+    # Get the top prediction (most likely instrument)
     top_prediction = max(predictions.items(), key=lambda x: x[1])[0]
     top_score = predictions[top_prediction]
 
@@ -114,13 +114,32 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
             'tru': 'trumpet', 'vio': 'violin', 'voi': 'voice'
         }
 
-        # Extract labels from filename like [sax][jaz_blu]1737__1.wav
+        # Try to extract labels from different filename patterns
         import re
+
+        # 1. Standard IRMAS pattern like [sax][jaz_blu]1737__1.wav
         irmas_pattern = r'\[([a-z]{3})\]'
         irmas_matches = re.findall(irmas_pattern, filename)
 
+        # 2. Check for annotations file nearby
+        annotation_path = pathlib.Path(wav_path).with_suffix('.txt')
+        annotation_matches = []
+        if annotation_path.exists():
+            try:
+                with open(annotation_path, 'r') as f:
+                    content = f.read().strip().split('\n')
+                    for line in content:
+                        code = line.strip().lower()[:3]  # get first 3 chars
+                        if code in irmas_to_label:
+                            annotation_matches.append(code)
+            except Exception as e:
+                print(f"Warning: Could not read annotation file: {e}")
+
+        # Combine all matches
+        all_matches = irmas_matches + annotation_matches
+
         ground_truth = []
-        for irmas_label in irmas_matches:
+        for irmas_label in all_matches:
             if irmas_label in irmas_to_label:
                 ground_truth.append(irmas_to_label[irmas_label])
 
@@ -148,12 +167,14 @@ def main(ckpt, wav, config):
     print("\n" + "=" * 50)
     print(f"🎵 File: {pathlib.Path(wav).name}")
 
-    if "ground_truth" in result:
-        print(f"🎯 Ground truth: {result['ground_truth']}")
+    if "ground_truth" in result and result["ground_truth"]:
+        print(f"🎯 Ground truth: {', '.join(result['ground_truth'])}")
+    else:
+        print("⚠️ Ground truth: Not available (filename doesn't match IRMAS pattern)")
 
     print(f"🎺 Top prediction: {result['top_prediction']} ({result['top_score']:.4f})")
 
-    print(f"📊 All predictions (sorted):")
+    print(f"📊 All predictions (sorted by softmax probability):")
     predictions = result["predictions"]
     sorted_preds = sorted(predictions.items(), key=lambda x: x[1], reverse=True)
 
@@ -167,6 +188,8 @@ def main(ckpt, wav, config):
         print(f"🎯 Evaluation: {status}")
         if result["correct"]:
             print(f"   (Top prediction matches one of the ground truth labels)")
+    else:
+        print("⚠️ Evaluation not possible (no ground truth available)")
 
     print("=" * 50)
 

@@ -164,11 +164,8 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
             nn.Dropout(0.3)
         )
 
-        # Final classifier
-        self.classifier = nn.Sequential(
-            nn.Linear(512, n_classes),
-            nn.Sigmoid()  # multi-label classification
-        )
+        # Final classifier - returning logits for BCE with logits loss
+        self.classifier = nn.Linear(512, n_classes)
 
         # Initialize with backbone frozen
         if freeze_backbone:
