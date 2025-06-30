@@ -4,8 +4,10 @@ import argparse, yaml, torch, librosa, numpy as np, pathlib
 
 from data.preprocess import generate_multi_stft
 from models.multi_stft_cnn import MultiSTFTCNN
+from utils.model_loader import load_model_from_checkpoint
 from var import LABELS, n_ffts, band_ranges_as_tuples
 
+#TODO: maybe adapt to  single label
 
 def extract_features(path, cfg):
     """
@@ -42,22 +44,6 @@ def extract_features(path, cfg):
                 specs_list.append(torch.zeros(1, 1, 10, 10))
 
     return specs_list
-
-
-def load_model_from_checkpoint(ckpt_path, n_classes):
-    """
-    Load model from PyTorch Lightning checkpoint, handling key prefix issues.
-
-    Args:
-        ckpt_path: Path to checkpoint file
-        n_classes: Number of classes
-
-    Returns:
-        Loaded model
-    """
-    # Use the unified model loader
-    from utils.model_loader import load_model
-    return load_model(ckpt_path, n_classes=n_classes)
 
 def predict(model, wav_path, cfg):
     """

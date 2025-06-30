@@ -131,41 +131,25 @@ class MultiSTFTNpyDataset(Dataset):
         """
         labels = []
 
-        if folder_name.startswith("mixed_"):
-            # Handle mixed samples: e.g., "mixed_3_piano" or "mixed_68_trumpet_voice"
-            parts = folder_name.split("_")
-            if len(parts) >= 3:
-                # Extract instrument labels (everything after "mixed_X_")
-                instrument_parts = parts[2:]  # Skip "mixed" and the ID number
+        # Handle original IRMAS samples with complex naming
+        # Look for patterns like [cel], [pia], [org], etc.
+        irmas_pattern = r'\[([a-z]{3})\]'
+        irmas_matches = re.findall(irmas_pattern, folder_name)
 
-                # Join the parts back and split by common separators
-                instrument_string = "_".join(instrument_parts)
+        for irmas_label in irmas_matches:
+            if irmas_label in self.irmas_to_label_map:
+                our_label = self.irmas_to_label_map[irmas_label]
+                if our_label not in labels:  # Avoid duplicates
+                    labels.append(our_label)
 
-                # Check each label in our mapping
-                for our_label in self.label_map.keys():
-                    if our_label in instrument_string:
-                        labels.append(our_label)
-
-        else:
-            # Handle original IRMAS samples with complex naming
-            # Look for patterns like [cel], [pia], [org], etc.
-            irmas_pattern = r'\[([a-z]{3})\]'
-            irmas_matches = re.findall(irmas_pattern, folder_name)
-
-            for irmas_label in irmas_matches:
-                if irmas_label in self.irmas_to_label_map:
-                    our_label = self.irmas_to_label_map[irmas_label]
-                    if our_label not in labels:  # Avoid duplicates
-                        labels.append(our_label)
-
-            # If no IRMAS pattern found, try simple format
-            if not labels:
-                # Try simple format: "piano_123", "trumpet_456"
-                label_str = folder_name.split("_")[0]
-                if label_str in self.label_map:
-                    labels.append(label_str)
-                elif label_str in self.irmas_to_label_map:
-                    labels.append(self.irmas_to_label_map[label_str])
+        # If no IRMAS pattern found, try simple format
+        if not labels:
+            # Try simple format: "piano_123", "trumpet_456"
+            label_str = folder_name.split("_")[0]
+            if label_str in self.label_map:
+                labels.append(label_str)
+            elif label_str in self.irmas_to_label_map:
+                labels.append(self.irmas_to_label_map[label_str])
 
         return labels
 

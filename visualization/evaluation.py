@@ -15,16 +15,9 @@ import pandas as pd
 
 from models.multi_stft_cnn import MultiSTFTCNN
 from data.dataset import MultiSTFTNpyDataset
+from utils.model_loader import load_model_from_checkpoint
 from var import LABELS
 
-
-def load_model_from_checkpoint(ckpt_path, n_classes, cfg):
-    """
-    Improved model loading with better error handling.
-    """
-    # Use the unified model loader
-    from utils.model_loader import load_model
-    return load_model(ckpt_path, cfg=cfg, n_classes=n_classes)
 
 
 def extract_ground_truth_from_filename(filename):
