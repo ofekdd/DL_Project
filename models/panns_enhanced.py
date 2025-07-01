@@ -15,28 +15,28 @@ class PANNsFeatureExtractor(nn.Module):
         # CNN14 architecture (simplified - key conv blocks)
         self.conv_block1 = nn.Sequential(
             nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(64),
+            nn.GroupNorm(num_groups=4, num_channels=64),  # replaces BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         )
 
         self.conv_block2 = nn.Sequential(
             nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(128),
+            nn.GroupNorm(num_groups=8, num_channels=128),  # replaces BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         )
 
         self.conv_block3 = nn.Sequential(
             nn.Conv2d(128, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(256),
+            nn.GroupNorm(num_groups=16, num_channels=256),  # BatchNorm2d(256),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         )
 
         self.conv_block4 = nn.Sequential(
             nn.Conv2d(256, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(512),
+            nn.GroupNorm(num_groups=32, num_channels=512),  # BatchNorm2d(512),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1))
         )
