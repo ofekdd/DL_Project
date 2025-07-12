@@ -21,10 +21,10 @@ class PANNsLitModel(pl.LightningModule):
         super().__init__()
 
         # Get PANNs-specific config
-        self.freeze_epochs = cfg.get('freeze_epochs', 3)
-        self.frozen_lr = cfg.get('frozen_learning_rate', 1e-3)
-        self.finetune_lr = cfg.get('finetune_learning_rate', 1e-4)
-        self.mixup_alpha = cfg.get('mixup_alpha', 0.2)  # Mixup interpolation strength
+        self.freeze_epochs = int(cfg.get('freeze_epochs', 3))
+        self.frozen_lr = float(cfg.get('frozen_learning_rate', 1e-3))
+        self.finetune_lr = float(cfg.get('finetune_learning_rate', 1e-4))
+        self.mixup_alpha = float(cfg.get('mixup_alpha', 0.2))  # Mixup interpolation strength
 
         # Get PANNs checkpoint path
         panns_path = download_panns_checkpoint()
@@ -152,13 +152,13 @@ class PANNsLitModel(pl.LightningModule):
             print(f"Optimizer: Using lower learning rate ({lr}) for full model fine-tuning")
 
         # Apply higher weight decay from config or default
-        weight_decay = self.hparams.get('weight_decay', 1e-4)
+        weight_decay = float(self.hparams.get('weight_decay', 1e-4))
         optimizer = torch.optim.AdamW(trainable_params, lr=lr, weight_decay=weight_decay)
 
         # Implement learning rate scheduler if enabled
         if self.hparams.get('use_lr_scheduler', False):
-            patience = self.hparams.get('lr_scheduler_patience', 3)
-            factor = self.hparams.get('lr_scheduler_factor', 0.5)
+            patience = int(self.hparams.get('lr_scheduler_patience', 3))
+            factor = float(self.hparams.get('lr_scheduler_factor', 0.5))
             print(f"📉 Using LR scheduler: patience={patience}, factor={factor}")
 
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -202,8 +202,8 @@ def main(config):
     train_loader, val_loader = create_dataloaders(
         train_dir=train_dir,
         val_dir=val_dir,
-        batch_size=cfg['batch_size'],
-        num_workers=cfg['num_workers'],
+        batch_size=int(cfg['batch_size']),
+        num_workers=int(cfg['num_workers']),
         use_multi_stft=True,  # Use MultiSTFTNpyDataset for spectrograms
         max_samples=cfg.get('max_samples', None)
     )
@@ -225,20 +225,24 @@ def main(config):
 
     # Configure trainer with extended training epochs
     trainer_kwargs = {
-        'max_epochs': cfg.get('num_epochs', 15),  # Default to more epochs for the two-phase approach
+        'max_epochs': int(cfg.get('num_epochs', 15)),  # Default to more epochs for the two-phase approach
         'callbacks': callbacks,
         'accelerator': "auto",
-        'gradient_clip_val': cfg.get('gradiend_clip_val', 1.0),  # Add gradient clipping
+        'gradient_clip_val': float(cfg.get('gradiend_clip_val', 1.0)),  # Add gradient clipping
     }
 
     # Add validation efficiency settings if specified
     if 'limit_val_batches' in cfg:
-        trainer_kwargs['limit_val_batches'] = cfg['limit_val_batches']
-        print(f"Limiting validation to {cfg['limit_val_batches'] * 100 if cfg['limit_val_batches'] <= 1 else cfg['limit_val_batches']}{'%' if cfg['limit_val_batches'] <= 1 else ' batches'}")
+        # Ensure limit_val_batches is a float
+        limit_val_batches = float(cfg['limit_val_batches'])
+        trainer_kwargs['limit_val_batches'] = limit_val_batches
+        print(f"Limiting validation to {limit_val_batches * 100 if limit_val_batches <= 1 else limit_val_batches}{'%' if limit_val_batches <= 1 else ' batches'}")
 
     if 'num_sanity_val_steps' in cfg:
-        trainer_kwargs['num_sanity_val_steps'] = cfg['num_sanity_val_steps']
-        print(f"Using {cfg['num_sanity_val_steps']} sanity validation steps")
+        # Ensure num_sanity_val_steps is an integer
+        num_sanity_val_steps = int(cfg['num_sanity_val_steps'])
+        trainer_kwargs['num_sanity_val_steps'] = num_sanity_val_steps
+        print(f"Using {num_sanity_val_steps} sanity validation steps")
 
     # Create trainer
     trainer = pl.Trainer(**trainer_kwargs)
