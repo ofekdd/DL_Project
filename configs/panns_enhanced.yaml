@@ -3,14 +3,14 @@ model_name: panns_enhanced
 sample_rate: 22050
 n_mels: 64
 hop_length: 512
-batch_size: 16  # Smaller batch size due to larger model
-num_epochs: 30  # Extended for two-phase training
+batch_size: 32  # Smaller batch size due to larger model
+num_epochs: 50  # Extended for two-phase training
 num_workers: 2
 
 # PANNs-specific settings
-freeze_epochs: 1  # Initial epochs with frozen backbone
-frozen_learning_rate: 0.001  # Higher LR when backbone frozen
-finetune_learning_rate: 0.0001  # Lower LR for fine-tuning
+freeze_epochs: 2  # Initial epochs with frozen backbone
+frozen_learning_rate: 0.002  # Higher LR when backbone frozen
+finetune_learning_rate: 0.0003  # Increased LR for fine-tuning
 
 # Training efficiency settings
 limit_val_batches: 1.0  # Use all validation data for reliable metrics
