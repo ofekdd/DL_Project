@@ -13,7 +13,7 @@ frozen_learning_rate: 0.001  # Higher LR when backbone frozen
 finetune_learning_rate: 0.0001  # Lower LR for fine-tuning
 
 # Training efficiency settings
-limit_val_batches: 0.1  # Use all validation data for reliable metrics
+limit_val_batches: 0.2  # Use all validation data for reliable metrics
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup
 
 # Dataset creation settings
