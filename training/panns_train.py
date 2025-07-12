@@ -4,6 +4,7 @@ import pytorch_lightning as pl
 import torch
 import yaml
 import argparse
+import numpy as np
 from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping, ModelCheckpoint
 
 from models.panns_enhanced import MultiSTFTCNN_WithPANNs
@@ -11,6 +12,7 @@ from training.callbacks import default_callbacks
 from training.metrics import MetricCollection
 from data.dataset import create_dataloaders
 from data.download_pnn import download_panns_checkpoint
+from data.augmentations import apply_spec_augment
 from var import LABELS
 
 
@@ -22,6 +24,7 @@ class PANNsLitModel(pl.LightningModule):
         self.freeze_epochs = cfg.get('freeze_epochs', 3)
         self.frozen_lr = cfg.get('frozen_learning_rate', 1e-3)
         self.finetune_lr = cfg.get('finetune_learning_rate', 1e-4)
+        self.mixup_alpha = cfg.get('mixup_alpha', 0.2)  # Mixup interpolation strength
 
         # Get PANNs checkpoint path
         panns_path = download_panns_checkpoint()
@@ -47,24 +50,75 @@ class PANNsLitModel(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
 
+    def mixup_data(self, x, y, alpha=0.2):
+        '''Applies mixup augmentation to the batch'''
+        if alpha > 0:
+            lam = np.random.beta(alpha, alpha)
+        else:
+            lam = 1
+
+        batch_size = x[0].size(0)
+        index = torch.randperm(batch_size).to(x[0].device)
+
+        mixed_x = []
+        for spec in x:
+            mixed_x.append(lam * spec + (1 - lam) * spec[index, :])
+
+        # For one-hot encoded targets
+        if y.dim() > 1:
+            mixed_y = lam * y + (1 - lam) * y[index]
+            return mixed_x, mixed_y, lam
+        else:  # For class index targets
+            y_a, y_b = y, y[index]
+            return mixed_x, (y_a, y_b, lam)
+
+    def mixup_criterion(self, criterion, pred, y_a, y_b, lam):
+        return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
     def common_step(self, batch, stage):
         x, y = batch
-        logits = self(x)
 
-        # For single-label classification, use cross-entropy loss
-        # Convert multi-hot targets to class indices if needed
-        if y.dim() > 1 and y.size(1) > 1:  # Multi-hot encoded
-            target_classes = torch.argmax(y, dim=1)  # Get the dominant instrument
-        else:  # Already single-label format
-            target_classes = y
+        # Apply mixup during training only
+        if stage == 'train' and self.current_epoch >= self.freeze_epochs and np.random.random() < 0.5:
+            # Use mixup data augmentation
+            if y.dim() > 1 and y.size(1) > 1:  # Multi-hot encoded
+                target_classes = torch.argmax(y, dim=1)  # Get the dominant instrument
+                x, (targets_a, targets_b, lam), _ = self.mixup_data(x, target_classes)
+                logits = self(x)
+                loss = self.mixup_criterion(torch.nn.functional.cross_entropy, logits, targets_a, targets_b, lam)
 
-        loss = torch.nn.functional.cross_entropy(logits, target_classes)
+                # For metrics, we'll use the primary target
+                probs = torch.nn.functional.softmax(logits, dim=1)
+                metrics = self.metrics(probs, targets_a)  # Use primary targets for metrics
+            else:  # Already single-label format
+                x, (targets_a, targets_b, lam), _ = self.mixup_data(x, y)
+                logits = self(x)
+                loss = self.mixup_criterion(torch.nn.functional.cross_entropy, logits, targets_a, targets_b, lam)
 
-        # Apply softmax to get probabilities for metrics
-        probs = torch.nn.functional.softmax(logits, dim=1)
+                # For metrics, we'll use the primary target
+                probs = torch.nn.functional.softmax(logits, dim=1)
+                metrics = self.metrics(probs, targets_a)  # Use primary targets for metrics
+        else:
+            # Regular forward pass without mixup
+            # Apply SpecAugment during training
+            if stage == 'train':
+                x = apply_spec_augment(x, p=0.7)
+            logits = self(x)
 
-        # Calculate metrics
-        metrics = self.metrics(probs, target_classes)
+            # For single-label classification, use cross-entropy loss
+            # Convert multi-hot targets to class indices if needed
+            if y.dim() > 1 and y.size(1) > 1:  # Multi-hot encoded
+                target_classes = torch.argmax(y, dim=1)  # Get the dominant instrument
+            else:  # Already single-label format
+                target_classes = y
+
+            loss = torch.nn.functional.cross_entropy(logits, target_classes)
+
+            # Apply softmax to get probabilities for metrics
+            probs = torch.nn.functional.softmax(logits, dim=1)
+
+            # Calculate metrics
+            metrics = self.metrics(probs, target_classes)
 
         self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}},
                       prog_bar=True)
@@ -97,7 +151,36 @@ class PANNsLitModel(pl.LightningModule):
             lr = self.finetune_lr
             print(f"Optimizer: Using lower learning rate ({lr}) for full model fine-tuning")
 
-        return torch.optim.Adam(trainable_params, lr=lr, weight_decay=1e-4)
+        # Apply higher weight decay from config or default
+        weight_decay = self.hparams.get('weight_decay', 1e-4)
+        optimizer = torch.optim.AdamW(trainable_params, lr=lr, weight_decay=weight_decay)
+
+        # Implement learning rate scheduler if enabled
+        if self.hparams.get('use_lr_scheduler', False):
+            patience = self.hparams.get('lr_scheduler_patience', 3)
+            factor = self.hparams.get('lr_scheduler_factor', 0.5)
+            print(f"📉 Using LR scheduler: patience={patience}, factor={factor}")
+
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 
+                mode='max',
+                factor=factor, 
+                patience=patience, 
+                verbose=True,
+                min_lr=1e-6
+            )
+
+            return {
+                'optimizer': optimizer,
+                'lr_scheduler': {
+                    'scheduler': scheduler,
+                    'monitor': 'val/Accuracy',
+                    'interval': 'epoch',
+                    'frequency': 1
+                }
+            }
+
+        return optimizer
 
 
 def main(config):
@@ -131,11 +214,11 @@ def main(config):
     # Setup callbacks with extended patience for the two-phase training
     callbacks = [
         LearningRateMonitor(logging_interval='epoch'),
-        EarlyStopping(monitor='val/Accuracy', mode='max', patience=8),  # More patience for two-phase training
+        EarlyStopping(monitor='val/Accuracy', mode='max', patience=12),  # Increased patience to avoid early termination
         ModelCheckpoint(
             monitor='val/Accuracy',
             mode='max',
-            save_top_k=1,
+            save_top_k=3,  # Save top 3 models
             filename='panns-{epoch:02d}-{val_Accuracy:.3f}'
         )
     ]
@@ -145,6 +228,7 @@ def main(config):
         'max_epochs': cfg.get('num_epochs', 15),  # Default to more epochs for the two-phase approach
         'callbacks': callbacks,
         'accelerator': "auto",
+        'gradient_clip_val': cfg.get('gradiend_clip_val', 1.0),  # Add gradient clipping
     }
 
     # Add validation efficiency settings if specified
