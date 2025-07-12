@@ -3,11 +3,8 @@
 import argparse, yaml, torch, librosa, numpy as np, pathlib
 
 from data.preprocess import generate_multi_stft
-from models.multi_stft_cnn import MultiSTFTCNN
 from utils.model_loader import load_model_from_checkpoint
 from var import LABELS, n_ffts, band_ranges_as_tuples
-
-#TODO: maybe adapt to  single label
 
 def extract_features(path, cfg):
     """
@@ -34,16 +31,17 @@ def extract_features(path, cfg):
     for band_label, n_fft in optimized_stfts:
         key = (band_label, n_fft)
         if key in specs_dict:
-                spec = specs_dict[key]
-                spec_tensor = torch.tensor(spec).unsqueeze(0).unsqueeze(0)  # [1, 1, F, T]
-                specs_list.append(spec_tensor)
+            spec = specs_dict[key]
+            spec_tensor = torch.tensor(spec).unsqueeze(0).unsqueeze(0)  # [1, 1, F, T]
+            specs_list.append(spec_tensor)
         else:
-                # If a specific spectrogram is missing, use a zero tensor of appropriate shape
-                print(f"Warning: Missing spectrogram for {key}")
-                # Use a small dummy tensor as fallback
-                specs_list.append(torch.zeros(1, 1, 10, 10))
+            # If a specific spectrogram is missing, use a zero tensor of appropriate shape
+            print(f"Warning: Missing spectrogram for {key}")
+            # Use a small dummy tensor as fallback
+            specs_list.append(torch.zeros(1, 1, 10, 10))
 
     return specs_list
+
 
 def predict(model, wav_path, cfg):
     """
@@ -154,6 +152,78 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
     return result
 
 
+def predict_batch_with_accuracy(model, wav_files, cfg, show_details=True):
+    """
+    Run inference on multiple audio files and calculate overall accuracy.
+
+    Args:
+        model: Trained model
+        wav_files: List of wav file paths
+        cfg: Configuration dictionary
+        show_details: Whether to show per-file details
+
+    Returns:
+        Dictionary with overall accuracy and per-file results
+    """
+    model.eval()
+
+    total_correct = 0
+    total_files = 0
+    file_results = []
+
+    print(f"🎵 Running inference on {len(wav_files)} files...")
+
+    for idx, wav_path in enumerate(wav_files, 1):
+        result = predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True)
+
+        # Track accuracy if ground truth is available
+        if "correct" in result:
+            total_files += 1
+            if result["correct"]:
+                total_correct += 1
+
+        file_results.append(result)
+
+        if show_details:
+            print(f"\n🎵 {idx}/{len(wav_files)} {pathlib.Path(wav_path).name}")
+
+            # Ground truth
+            gt = result.get("ground_truth", [])
+            if gt:
+                print(f"   🎯 Ground truth: {', '.join(gt)}")
+            else:
+                print("   ⚠️ Ground truth: Not available")
+
+            # Prediction
+            print(f"   🎺 Top prediction: {result['top_prediction']} ({result['top_score']:.4f})")
+
+            # Accuracy
+            if "correct" in result:
+                status = "✅ CORRECT" if result["correct"] else "❌ INCORRECT"
+                print(f"   📊 Evaluation: {status}")
+
+                # Show running accuracy
+                running_accuracy = total_correct / total_files if total_files > 0 else 0
+                print(f"   📈 Running accuracy: {total_correct}/{total_files} = {running_accuracy:.1%}")
+            else:
+                print("   ⚠️ Evaluation: Not possible (no ground truth)")
+
+            print("-" * 50)
+
+    # Calculate final accuracy
+    final_accuracy = total_correct / total_files if total_files > 0 else 0
+
+    print(f"\n✅ Inference completed!")
+    print(f"📊 Final accuracy: {total_correct}/{total_files} = {final_accuracy:.1%}")
+
+    return {
+        "total_correct": total_correct,
+        "total_files": total_files,
+        "accuracy": final_accuracy,
+        "file_results": file_results
+    }
+
+
 def main(ckpt, wav, config):
     cfg = yaml.safe_load(open(config))
 
@@ -200,6 +270,6 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("ckpt")
     p.add_argument("wav")
-    p.add_argument("--config", default="configs/multi_stft_cnn.yaml")
+    p.add_argument("--config", default="configs/panns_enhanced.yaml")
     args = p.parse_args()
     main(args.ckpt, args.wav, args.config)
