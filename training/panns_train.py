@@ -166,7 +166,6 @@ class PANNsLitModel(pl.LightningModule):
                 mode='max',
                 factor=factor, 
                 patience=patience, 
-                verbose=True,
                 min_lr=1e-6
             )
 
@@ -181,7 +180,6 @@ class PANNsLitModel(pl.LightningModule):
             }
 
         return optimizer
-
 
 def main(config):
     # Handle both file path and dictionary inputs
