@@ -83,7 +83,7 @@ class PANNsLitModel(pl.LightningModule):
             # Use mixup data augmentation
             if y.dim() > 1 and y.size(1) > 1:  # Multi-hot encoded
                 target_classes = torch.argmax(y, dim=1)  # Get the dominant instrument
-                x, (targets_a, targets_b, lam), _ = self.mixup_data(x, target_classes)
+                x, (targets_a, targets_b, lam) = self.mixup_data(x, target_classes)
                 logits = self(x)
                 loss = self.mixup_criterion(torch.nn.functional.cross_entropy, logits, targets_a, targets_b, lam)
 
@@ -91,7 +91,7 @@ class PANNsLitModel(pl.LightningModule):
                 probs = torch.nn.functional.softmax(logits, dim=1)
                 metrics = self.metrics(probs, targets_a)  # Use primary targets for metrics
             else:  # Already single-label format
-                x, (targets_a, targets_b, lam), _ = self.mixup_data(x, y)
+                x, (targets_a, targets_b, lam) = self.mixup_data(x, y)
                 logits = self(x)
                 loss = self.mixup_criterion(torch.nn.functional.cross_entropy, logits, targets_a, targets_b, lam)
 
