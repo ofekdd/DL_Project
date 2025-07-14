@@ -14,31 +14,45 @@ class PANNsFeatureExtractor(nn.Module):
 
         # CNN14 architecture (simplified - key conv blocks)
         self.conv_block1 = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(8, 64),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+            nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
         self.conv_block2 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(8, 128),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+            nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
         self.conv_block3 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(16, 256),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+            nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
         self.conv_block4 = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(512),
+            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(32, 512),
             nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool2d((1, 1))
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+
+        self.conv_block5 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(32, 512),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+
+        self.conv_block6 = nn.Sequential(
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(32, 512),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d((2, 2))  # Retain more spatial resolution
         )
 
         # Load pretrained weights from PANNs
@@ -137,6 +151,8 @@ class PANNsFeatureExtractor(nn.Module):
         x = self.conv_block2(x)
         x = self.conv_block3(x)
         x = self.conv_block4(x)
+        x = self.conv_block5(x)
+        x = self.conv_block6(x)
 
         # Flatten the output
         x = torch.flatten(x, 1)
