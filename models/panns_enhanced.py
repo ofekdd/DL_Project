@@ -38,14 +38,14 @@ class PANNsFeatureExtractor(nn.Module):
             nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1, bias=False),
             nn.GroupNorm(32, 512),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2)
+            nn.MaxPool2d(kernel_size=2, stride=1)
         )
 
         self.conv_block5 = nn.Sequential(
             nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False),
             nn.GroupNorm(32, 512),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2)
+            nn.MaxPool2d(kernel_size=1, stride=1)
         )
 
         self.conv_block6 = nn.Sequential(
