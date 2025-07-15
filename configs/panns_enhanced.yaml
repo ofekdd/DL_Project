@@ -3,7 +3,7 @@ model_name: panns_enhanced
 sample_rate: 22050
 n_mels: 64
 hop_length: 512
-batch_size: 32  # Smaller batch size due to larger model
+batch_size: 32 # Smaller batch size due to larger model
 num_epochs: 5  # Extended for two-phase training
 num_workers: 2
 
