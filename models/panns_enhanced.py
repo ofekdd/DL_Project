@@ -172,7 +172,7 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
 
         # Fusion layer to combine features from 3 spectrograms
         self.fusion = nn.Sequential(
-            nn.Linear(3 * 512, 1024),  # 3 spectrograms × 512 features each
+            nn.Linear(12 * 512, 1024),  # 3 spectrograms × 512 features each
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(1024, 512),
