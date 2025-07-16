@@ -12,7 +12,7 @@ class PANNsFeatureExtractor(nn.Module):
         # Load the pretrained PANNs model
         checkpoint = torch.load(pretrained_path, map_location='cpu')
 
-        # CNN14 architecture (simplified - key conv blocks)
+        # CNN14 architecture (enhanced with additional conv block)
         self.conv_block1 = nn.Sequential(
             nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
             nn.BatchNorm2d(64),
@@ -36,6 +36,9 @@ class PANNsFeatureExtractor(nn.Module):
 
         self.conv_block4 = nn.Sequential(
             nn.Conv2d(256, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
             nn.BatchNorm2d(512),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1))
@@ -154,23 +157,33 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
             PANNsFeatureExtractor(pretrained_path) for _ in range(3)
         ])
 
-        # Enhanced fusion layer to combine features from 3 spectrograms
+        # Further enhanced fusion layer to combine features from 3 spectrograms
         self.fusion = nn.Sequential(
-            nn.Linear(3 * 512, 1536),  # 3 spectrograms × 512 features each, increased width
-            nn.BatchNorm1d(1536),      # Added batch normalization
+            nn.Linear(3 * 512, 2048),  # 3 spectrograms × 512 features each, further increased width
+            nn.BatchNorm1d(2048),      # Added batch normalization
             nn.ReLU(),
             nn.Dropout(0.4),           # Increased dropout for better regularization
-            nn.Linear(1536, 768),      # Increased intermediate layer size
-            nn.BatchNorm1d(768),       # Added batch normalization
+            nn.Linear(2048, 1536),     # First intermediate layer
+            nn.BatchNorm1d(1536),      # Added batch normalization
+            nn.ReLU(),
+            nn.Dropout(0.4),
+            nn.Linear(1536, 1024),     # Second intermediate layer
+            nn.BatchNorm1d(1024),      # Added batch normalization
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(768, 512),       # Final projection to original size
+            nn.Linear(1024, 512),      # Final projection to original size
             nn.BatchNorm1d(512),       # Added batch normalization
             nn.ReLU()
         )
 
-        # Final classifier - returning logits for BCE with logits loss
-        self.classifier = nn.Linear(512, n_classes)
+        # Enhanced classifier with multiple layers
+        self.classifier = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(256, n_classes)
+        )
 
         # Initialize with backbone frozen
         if freeze_backbone:
