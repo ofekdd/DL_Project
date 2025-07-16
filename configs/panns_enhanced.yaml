@@ -3,26 +3,26 @@ model_name: panns_enhanced
 sample_rate: 22050
 n_mels: 64
 hop_length: 512
-batch_size: 32  # Smaller batch size due to larger model
-num_epochs: 50  # Extended for two-phase training
+batch_size: 16  # Smaller batch size due to larger model
+num_epochs: 2  # Extended for two-phase training
 num_workers: 2
 
 # PANNs-specific settings
-freeze_epochs: 4  # Increased initial epochs with frozen backbone
+freeze_epochs: 1  # Increased initial epochs with frozen backbone
 frozen_learning_rate: 0.003  # Higher LR when backbone frozen
 finetune_learning_rate: 0.0002  # Adjusted LR for fine-tuning
 
 # Training efficiency settings
-limit_val_batches: 1.0  # Use all validation data for reliable metrics
+limit_val_batches: 0.2  # Use all validation data for reliable metrics
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup
 
 # Dataset creation settings
-max_original_samples: null  # Use all original samples
+max_original_samples: 20  # Use all original samples
 num_mixtures: 0  # Create synthetic mixtures
 min_instruments: 1  # Minimum instruments per mixture
 max_instruments: 2  # Maximum instruments per mixture
-original_data_percentage: 1  # Use all original IRMAS data
+original_data_percentage: 0.1  # Use all original IRMAS data
 
 # Training dataset settings
-max_samples: null  # Maximum samples to use for training (None for all)
-max_test_samples: null
+max_samples: 20  # Maximum samples to use for training (None for all)
+max_test_samples: 20
