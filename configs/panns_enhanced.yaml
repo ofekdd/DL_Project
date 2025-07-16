@@ -8,9 +8,9 @@ num_epochs: 50  # Extended for two-phase training
 num_workers: 2
 
 # PANNs-specific settings
-freeze_epochs: 2  # Initial epochs with frozen backbone
-frozen_learning_rate: 0.002  # Higher LR when backbone frozen
-finetune_learning_rate: 0.0003  # Increased LR for fine-tuning
+freeze_epochs: 4  # Increased initial epochs with frozen backbone
+frozen_learning_rate: 0.003  # Higher LR when backbone frozen
+finetune_learning_rate: 0.0002  # Adjusted LR for fine-tuning
 
 # Training efficiency settings
 limit_val_batches: 1.0  # Use all validation data for reliable metrics

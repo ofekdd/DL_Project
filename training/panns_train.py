@@ -97,7 +97,7 @@ class PANNsLitModel(pl.LightningModule):
             lr = self.finetune_lr
             print(f"Optimizer: Using lower learning rate ({lr}) for full model fine-tuning")
 
-        return torch.optim.Adam(trainable_params, lr=lr, weight_decay=1e-4)
+        return torch.optim.Adam(trainable_params, lr=lr, weight_decay=2e-4)  # Increased weight decay for better regularization
 
 
 def main(config):
@@ -131,11 +131,11 @@ def main(config):
     # Setup callbacks with extended patience for the two-phase training
     callbacks = [
         LearningRateMonitor(logging_interval='epoch'),
-        EarlyStopping(monitor='val/Accuracy', mode='max', patience=8),  # More patience for two-phase training
+        EarlyStopping(monitor='val/Accuracy', mode='max', patience=12),  # Increased patience for deeper model
         ModelCheckpoint(
             monitor='val/Accuracy',
             mode='max',
-            save_top_k=1,
+            save_top_k=2,  # Save top 2 models
             filename='panns-{epoch:02d}-{val_Accuracy:.3f}'
         )
     ]

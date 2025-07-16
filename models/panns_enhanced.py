@@ -154,14 +154,19 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
             PANNsFeatureExtractor(pretrained_path) for _ in range(3)
         ])
 
-        # Fusion layer to combine features from 3 spectrograms
+        # Enhanced fusion layer to combine features from 3 spectrograms
         self.fusion = nn.Sequential(
-            nn.Linear(3 * 512, 1024),  # 3 spectrograms × 512 features each
+            nn.Linear(3 * 512, 1536),  # 3 spectrograms × 512 features each, increased width
+            nn.BatchNorm1d(1536),      # Added batch normalization
+            nn.ReLU(),
+            nn.Dropout(0.4),           # Increased dropout for better regularization
+            nn.Linear(1536, 768),      # Increased intermediate layer size
+            nn.BatchNorm1d(768),       # Added batch normalization
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.Dropout(0.3)
+            nn.Linear(768, 512),       # Final projection to original size
+            nn.BatchNorm1d(512),       # Added batch normalization
+            nn.ReLU()
         )
 
         # Final classifier - returning logits for BCE with logits loss
