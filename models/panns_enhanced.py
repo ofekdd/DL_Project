@@ -12,34 +12,37 @@ class PANNsFeatureExtractor(nn.Module):
         # Load the pretrained PANNs model
         checkpoint = torch.load(pretrained_path, map_location='cpu')
 
-        # CNN14 architecture (enhanced with additional conv block)
+        # CNN14 architecture (further enhanced with additional conv blocks and increased filters)
         self.conv_block1 = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(1, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),  # Increased filters from 64 to 96
+            nn.BatchNorm2d(96),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         )
 
         self.conv_block2 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(96, 192, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),  # Increased filters from 128 to 192
+            nn.BatchNorm2d(192),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         )
 
         self.conv_block3 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(192, 384, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),  # Increased filters from 256 to 384
+            nn.BatchNorm2d(384),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 384, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),  # Added additional conv layer
+            nn.BatchNorm2d(384),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
         )
 
         self.conv_block4 = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(512),
+            nn.Conv2d(384, 768, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),  # Increased filters from 512 to 768
+            nn.BatchNorm2d(768),
             nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),
-            nn.BatchNorm2d(512),
+            nn.Conv2d(768, 768, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),  # Increased filters from 512 to 768
+            nn.BatchNorm2d(768),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1))
         )
@@ -142,7 +145,7 @@ class PANNsFeatureExtractor(nn.Module):
         x = self.conv_block4(x)
 
         # Flatten the output
-        x = torch.flatten(x, 1)
+        x = torch.flatten(x, 1)  # Output is now 768 features instead of 512
 
         return x
 
@@ -157,32 +160,44 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
             PANNsFeatureExtractor(pretrained_path) for _ in range(3)
         ])
 
-        # Further enhanced fusion layer to combine features from 3 spectrograms
+        # Further enhanced fusion layer to combine features from 3 spectrograms with increased capacity
         self.fusion = nn.Sequential(
-            nn.Linear(3 * 512, 2048),  # 3 spectrograms × 512 features each, further increased width
-            nn.BatchNorm1d(2048),      # Added batch normalization
+            nn.Linear(3 * 768, 2560),  # 3 spectrograms × 768 features each, further increased width
+            nn.BatchNorm1d(2560),      # Added batch normalization
             nn.ReLU(),
             nn.Dropout(0.4),           # Increased dropout for better regularization
-            nn.Linear(2048, 1536),     # First intermediate layer
-            nn.BatchNorm1d(1536),      # Added batch normalization
+            nn.Linear(2560, 2048),     # First intermediate layer
+            nn.BatchNorm1d(2048),      # Added batch normalization
             nn.ReLU(),
             nn.Dropout(0.4),
-            nn.Linear(1536, 1024),     # Second intermediate layer
+            nn.Linear(2048, 1536),     # Second intermediate layer
+            nn.BatchNorm1d(1536),      # Added batch normalization
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(1536, 1024),     # Third intermediate layer
             nn.BatchNorm1d(1024),      # Added batch normalization
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(1024, 512),      # Final projection to original size
-            nn.BatchNorm1d(512),       # Added batch normalization
+            nn.Linear(1024, 768),      # Final projection to match feature extractor size
+            nn.BatchNorm1d(768),       # Added batch normalization
             nn.ReLU()
         )
 
-        # Enhanced classifier with multiple layers
+        # Further enhanced classifier with deeper architecture
         self.classifier = nn.Sequential(
-            nn.Linear(512, 256),
+            nn.Linear(768, 512),       # First layer
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 384),       # Second layer
+            nn.BatchNorm1d(384),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(384, 256),       # Third layer
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(256, n_classes)
+            nn.Linear(256, n_classes)  # Output layer
         )
 
         # Initialize with backbone frozen
@@ -214,14 +229,14 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
 
         # Extract features from each spectrogram
         for i, spec in enumerate(spectrograms_list):
-            feat = self.feature_extractors[i](spec)  # [batch, 512]
+            feat = self.feature_extractors[i](spec)  # [batch, 768]
             features.append(feat)
 
         # Concatenate all features
-        combined_features = torch.cat(features, dim=1)  # [batch, 3*512]
+        combined_features = torch.cat(features, dim=1)  # [batch, 3*768]
 
         # Fusion and classification
-        fused = self.fusion(combined_features)  # [batch, 512]
+        fused = self.fusion(combined_features)  # [batch, 768]
         output = self.classifier(fused)  # [batch, n_classes]
 
         return output
