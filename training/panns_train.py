@@ -131,7 +131,7 @@ def main(config):
     # Setup callbacks with extended patience for the two-phase training
     callbacks = [
         LearningRateMonitor(logging_interval='epoch'),
-        EarlyStopping(monitor='val/Accuracy', mode='max', patience=12),  # Increased patience for deeper model
+        EarlyStopping(monitor='val/Accuracy', mode='max', patience=8),  # Reduced patience to prevent overfitting
         ModelCheckpoint(
             monitor='val/Accuracy',
             mode='max',

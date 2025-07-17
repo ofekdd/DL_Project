@@ -157,31 +157,27 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
             PANNsFeatureExtractor(pretrained_path) for _ in range(3)
         ])
 
-        # Further enhanced fusion layer to combine features from 3 spectrograms
+        # Simplified fusion layer with balanced complexity
         self.fusion = nn.Sequential(
-            nn.Linear(3 * 512, 2048),  # 3 spectrograms × 512 features each, further increased width
-            nn.BatchNorm1d(2048),      # Added batch normalization
-            nn.ReLU(),
-            nn.Dropout(0.4),           # Increased dropout for better regularization
-            nn.Linear(2048, 1536),     # First intermediate layer
+            nn.Linear(3 * 512, 1536),  # 3 spectrograms × 512 features each, moderate width
             nn.BatchNorm1d(1536),      # Added batch normalization
             nn.ReLU(),
-            nn.Dropout(0.4),
-            nn.Linear(1536, 1024),     # Second intermediate layer
-            nn.BatchNorm1d(1024),      # Added batch normalization
+            nn.Dropout(0.3),           # Moderate dropout for regularization
+            nn.Linear(1536, 768),      # First intermediate layer
+            nn.BatchNorm1d(768),       # Added batch normalization
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(1024, 512),      # Final projection to original size
+            nn.Linear(768, 512),       # Final projection to original size
             nn.BatchNorm1d(512),       # Added batch normalization
             nn.ReLU()
         )
 
-        # Enhanced classifier with multiple layers
+        # Simplified classifier with balanced complexity
         self.classifier = nn.Sequential(
             nn.Linear(512, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.25),  # Slightly increased dropout for better regularization
             nn.Linear(256, n_classes)
         )
 
