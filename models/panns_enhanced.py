@@ -132,7 +132,7 @@ class PANNsFeatureExtractor(nn.Module):
         # Update model weights
         if filtered_dict:
             model_dict.update(filtered_dict)
-            self.load_state_dict(model_dict)
+            self.load_state_dict(model_dict, strict=False)
             print(f"✅ PANNs pretrained weights integrated successfully!")
         else:
             print("⚠️ No pretrained weights were loaded. Using random initialization.")
