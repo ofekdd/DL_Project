@@ -234,19 +234,15 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
 
         # Further enhanced fusion layer to combine features from 3 spectrograms with increased capacity
         self.fusion = nn.Sequential(
-            nn.Linear(3 * 768, 2560),  # 3 spectrograms × 768 features each, further increased width
-            nn.BatchNorm1d(2560),      # Added batch normalization
-            nn.ReLU(),
-            nn.Dropout(0.4),           # Increased dropout for better regularization
-            nn.Linear(2560, 2048),     # First intermediate layer
+            nn.Linear(3 * 768, 2048),  # 3 spectrograms × 768 features each
             nn.BatchNorm1d(2048),      # Added batch normalization
             nn.ReLU(),
-            nn.Dropout(0.4),
-            nn.Linear(2048, 1536),     # Second intermediate layer
+            nn.Dropout(0.4),           # Increased dropout for better regularization
+            nn.Linear(2048, 1536),     # First intermediate layer
             nn.BatchNorm1d(1536),      # Added batch normalization
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(1536, 1024),     # Third intermediate layer
+            nn.Dropout(0.4),
+            nn.Linear(1536, 1024),     # Second intermediate layer
             nn.BatchNorm1d(1024),      # Added batch normalization
             nn.ReLU(),
             nn.Dropout(0.3),
@@ -257,11 +253,11 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
 
         # Enhanced classifier
         self.classifier = nn.Sequential(
-            nn.Linear(512, 384),
-            nn.BatchNorm1d(384),
+            nn.Linear(768, 512),
+            nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(384, 256),
+            nn.Linear(512, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.2),
