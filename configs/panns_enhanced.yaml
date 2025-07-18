@@ -19,10 +19,10 @@ min_instruments: 1  # Minimum instruments per mixture
 max_instruments: 2  # Maximum instruments per mixture
 
 # Training dataset settings
-num_epochs: 2  # Extended for two-phase training, for fast run: 2
-freeze_epochs: 1  # Increased initial epochs with frozen backbone, for fast run: 1
-limit_val_batches: 0.35  # Use all validation data for reliable metrics, for fast run: 0.2
-original_data_percentage: 0.1  # Use all original IRMAS data, for fast run: 0.1
-max_original_samples: 20  # Use all original samples, for fast run: 20
-max_samples: 20  # Maximum samples to use for training (None for all), for fast run: 20
-max_test_samples: 20 # Maximum samples to use for testing (None for all), for fast run: 20
+num_epochs: 50  # Extended for two-phase training, for fast run: 2
+freeze_epochs: 4  # Increased initial epochs with frozen backbone, for fast run: 1
+limit_val_batches: 1.0  # Use all validation data for reliable metrics, for fast run: 0.2
+original_data_percentage: 1  # Use all original IRMAS data, for fast run: 0.1
+max_original_samples: null  # Use all original samples, for fast run: 20
+max_samples: null  # Maximum samples to use for training (None for all), for fast run: 20
+max_test_samples: null # Maximum samples to use for testing (None for all), for fast run: 20
