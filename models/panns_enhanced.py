@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from models.multi_stft_cnn import STFTBranch
 
 class PANNsFeatureExtractor(nn.Module):
     """Extract the convolutional layers from PANNs CNN14 for feature extraction."""
@@ -12,7 +10,7 @@ class PANNsFeatureExtractor(nn.Module):
         # Load the pretrained PANNs model
         checkpoint = torch.load(pretrained_path, map_location='cpu')
 
-        # CNN14 architecture (further enhanced with additional conv blocks and increased filters)
+        # CNN14 architecture (enhanced with additional conv blocks and increased filters)
         self.conv_block1 = nn.Sequential(
             nn.Conv2d(1, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),  # Increased filters from 64 to 96
             nn.BatchNorm2d(96),
@@ -51,7 +49,7 @@ class PANNsFeatureExtractor(nn.Module):
         self.load_pretrained_weights(checkpoint)
 
     def load_pretrained_weights(self, checkpoint):
-        """Load weights from PANNs checkpoint."""
+        """Load weights from PANNs checkpoint with intelligent upscaling."""
         model_dict = self.state_dict()
         pretrained_dict = checkpoint['model']
 
@@ -103,22 +101,95 @@ class PANNsFeatureExtractor(nn.Module):
                     our_shape = model_dict[our_key].shape
                     panns_shape = pretrained_dict[panns_key].shape
 
-                    # Handle first conv layer input channel mismatch
+                    # ENHANCED: Handle first conv layer with 1 channel input
                     if our_key == 'conv_block1.0.weight':
-                        if our_shape[1] == 1 and panns_shape[1] == 1:
-                            # Both single channel - direct copy
-                            filtered_dict[our_key] = pretrained_dict[panns_key]
+                        # Handle first layer, which has 1 input channel in both models
+                        if our_shape[1] == panns_shape[1] == 1:
+                            # Intelligently expand the filters: tile or interpolate to get from 64 to 96 filters
+                            source_weight = pretrained_dict[panns_key]  # Shape: [64, 1, 3, 3]
+                            target_weight = torch.zeros(our_shape)  # Shape: [96, 1, 3, 3]
+
+                            # Copy the original 64 filters
+                            target_weight[:64] = source_weight
+
+                            # For the additional 32 filters, create variations of existing ones
+                            for i in range(64, 96):
+                                # Use existing filters with small random variations
+                                source_idx = i % 64  # Cycle through existing filters
+                                target_weight[i] = source_weight[source_idx] * (0.9 + 0.2 * torch.rand(1))
+
+                            filtered_dict[our_key] = target_weight
                             loaded_keys += 1
-                        elif our_shape[1] == 1 and panns_shape[1] > 1:
-                            # PANNs has more channels, take average
-                            adapted_weight = pretrained_dict[panns_key].mean(dim=1, keepdim=True)
-                            filtered_dict[our_key] = adapted_weight
+                            print(f"   ✅ Expanded first conv layer: {panns_shape} → {our_shape}")
+
+                    # ENHANCED: Handle conv layer weight expansions (both input and output channels)
+                    elif 'weight' in our_key and len(our_shape) == 4:  # Conv2d weights
+                        if our_shape[0] > panns_shape[0] and our_shape[1] > panns_shape[1]:
+                            # Both input and output channels need expanding
+                            # Copy the core, then tile with variations for additional filters
+                            source_weight = pretrained_dict[panns_key]
+                            target_weight = torch.zeros(our_shape)
+
+                            # Copy core weights
+                            target_weight[:panns_shape[0], :panns_shape[1]] = source_weight
+
+                            # Fill additional rows and columns with variations of existing filters
+                            for i in range(our_shape[0]):
+                                for j in range(our_shape[1]):
+                                    if i >= panns_shape[0] or j >= panns_shape[1]:
+                                        # Use existing weights with variations
+                                        source_i = i % panns_shape[0]
+                                        source_j = j % panns_shape[1]
+                                        variation = 0.8 + 0.4 * torch.rand(1)
+                                        target_weight[i, j] = source_weight[source_i, source_j] * variation
+
+                            filtered_dict[our_key] = target_weight
                             loaded_keys += 1
-                            print(f"   ✅ Adapted first conv layer: {panns_shape} -> {our_shape}")
-                        else:
-                            print(f"   ⚠️ Cannot adapt first conv layer: {panns_shape} vs {our_shape}")
-                    elif our_shape == panns_shape:
-                        # Direct copy for matching shapes
+                            print(f"   ✅ Expanded conv weights: {panns_shape} → {our_shape}")
+
+                        elif our_shape[0] > panns_shape[0]:  # Just output channels expanded
+                            # Copy original filters, then add variations for additional filters
+                            source_weight = pretrained_dict[panns_key]
+                            target_weight = torch.zeros(our_shape)
+
+                            # Copy original filters
+                            target_weight[:panns_shape[0]] = source_weight
+
+                            # Create variations for additional filters
+                            for i in range(panns_shape[0], our_shape[0]):
+                                source_idx = i % panns_shape[0]
+                                target_weight[i] = source_weight[source_idx] * (0.9 + 0.2 * torch.rand(1))
+
+                            filtered_dict[our_key] = target_weight
+                            loaded_keys += 1
+                            print(f"   ✅ Expanded output channels: {panns_shape} → {our_shape}")
+
+                    # ENHANCED: Handle BatchNorm parameter expansions
+                    elif any(param in our_key for param in ['weight', 'bias', 'running_mean', 'running_var']) and len(our_shape) == 1:
+                        # BatchNorm parameters need expansion
+                        if our_shape[0] > panns_shape[0]:
+                            source_param = pretrained_dict[panns_key]
+                            target_param = torch.zeros(our_shape)
+
+                            # Copy original parameters
+                            target_param[:panns_shape[0]] = source_param
+
+                            # For additional parameters, use mean values with small variations
+                            if 'weight' in our_key or 'bias' in our_key:
+                                mean_value = source_param.mean()
+                                target_param[panns_shape[0]:] = mean_value * (0.95 + 0.1 * torch.rand(our_shape[0] - panns_shape[0]))
+                            elif 'running_mean' in our_key:
+                                mean_value = source_param.mean()
+                                target_param[panns_shape[0]:] = mean_value * (0.98 + 0.04 * torch.rand(our_shape[0] - panns_shape[0]))
+                            elif 'running_var' in our_key:
+                                mean_value = source_param.mean()
+                                target_param[panns_shape[0]:] = mean_value * (0.9 + 0.2 * torch.rand(our_shape[0] - panns_shape[0]))
+
+                            filtered_dict[our_key] = target_param
+                            loaded_keys += 1
+                            print(f"   ✅ Expanded BN parameters: {panns_shape} → {our_shape}")
+
+                    elif our_shape == panns_shape:  # Direct copy for matching shapes
                         filtered_dict[our_key] = pretrained_dict[panns_key]
                         loaded_keys += 1
                     else:
@@ -127,13 +198,13 @@ class PANNsFeatureExtractor(nn.Module):
                 except Exception as e:
                     print(f"   ❌ Error loading {our_key}: {e}")
 
-        print(f"✅ Successfully loaded {loaded_keys}/{len(key_mapping)} layers from PANNs")
+        print(f"✅ Successfully loaded and expanded {loaded_keys}/{len(key_mapping)} layers from PANNs")
 
         # Update model weights
         if filtered_dict:
             model_dict.update(filtered_dict)
             self.load_state_dict(model_dict, strict=False)
-            print(f"✅ PANNs pretrained weights integrated successfully!")
+            print(f"✅ PANNs pretrained weights integrated and expanded successfully!")
         else:
             print("⚠️ No pretrained weights were loaded. Using random initialization.")
 
@@ -145,9 +216,10 @@ class PANNsFeatureExtractor(nn.Module):
         x = self.conv_block4(x)
 
         # Flatten the output
-        x = torch.flatten(x, 1)  # Output is now 768 features instead of 512
+        x = torch.flatten(x, 1)  # Output is now 768 features
 
         return x
+
 
 class MultiSTFTCNN_WithPANNs(nn.Module):
     """Enhanced MultiSTFTCNN using PANNs pretrained features."""
@@ -183,21 +255,17 @@ class MultiSTFTCNN_WithPANNs(nn.Module):
             nn.ReLU()
         )
 
-        # Further enhanced classifier with deeper architecture
+        # Enhanced classifier
         self.classifier = nn.Sequential(
-            nn.Linear(768, 512),       # First layer
-            nn.BatchNorm1d(512),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, 384),       # Second layer
+            nn.Linear(512, 384),
             nn.BatchNorm1d(384),
             nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(384, 256),       # Third layer
+            nn.Dropout(0.3),
+            nn.Linear(384, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(256, n_classes)  # Output layer
+            nn.Linear(256, n_classes)
         )
 
         # Initialize with backbone frozen
