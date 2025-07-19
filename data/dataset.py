@@ -21,6 +21,30 @@ def pad_collate(batch):
     return torch.stack(padded), torch.stack(ys)
 
 
+def log_mel_pad_collate(batch):
+    """
+    Collate function for LogMelNpyDataset.
+    Each item in batch is a single log-mel spectrogram and a label.
+    """
+    # Unzip the batch into spectrograms and labels
+    specs, ys = zip(*batch)
+    
+    # Find max dimensions in the batch
+    H = max(spec.shape[1] for spec in specs)
+    W = max(spec.shape[2] for spec in specs)
+    
+    # Pad each spectrogram to the max dimensions
+    padded_specs = []
+    for spec in specs:
+        pad_h = H - spec.shape[1]
+        pad_w = W - spec.shape[2]
+        padded = torch.nn.functional.pad(spec, (0, pad_w, 0, pad_h))  # (left, right, top, bottom)
+        padded_specs.append(padded)
+    
+    # Stack the padded spectrograms and labels
+    return torch.stack(padded_specs), torch.stack(ys)
+
+
 def multi_stft_pad_collate(batch):
     """
     Collate function for MultiSTFTNpyDataset.
@@ -208,6 +232,140 @@ class MultiSTFTNpyDataset(Dataset):
         return specs, y
 
 
+class LogMelNpyDataset(Dataset):
+    """
+    Dataset for loading log-mel spectrograms for each audio file.
+    """
+
+    def __init__(self, root, max_samples=None):
+        # Handle string "None" from YAML config or convert string numbers to int
+        if isinstance(max_samples, str):
+            if max_samples.lower() == 'none':
+                max_samples = None
+            else:
+                try:
+                    max_samples = int(max_samples)
+                except ValueError:
+                    print(f"Warning: Could not convert max_samples '{max_samples}' to int, using None")
+                    max_samples = None
+
+        # Get all directories (each directory corresponds to one audio file)
+        self.dirs = list(set(file.parent for file in pathlib.Path(root).rglob("logmel.npy")))
+
+        print(f"Found {len(self.dirs)} total sample directories in {root}")
+
+        # Limit the number of samples if max_samples is specified
+        if max_samples is not None and isinstance(max_samples, int) and max_samples > 0 and max_samples < len(self.dirs):
+            self.dirs = self.dirs[:max_samples]
+            print(f"Limited to {max_samples} samples")
+
+        self.label_map = {label: i for i, label in enumerate(LABELS)}
+
+        # IRMAS directory name to our label mapping
+        self.irmas_to_label_map = {
+            'cel': 'cello',
+            'cla': 'clarinet',
+            'flu': 'flute',
+            'gac': 'acoustic_guitar',  # Guitar acoustic
+            'gel': 'acoustic_guitar',  # Guitar electric -> acoustic_guitar
+            'org': 'organ',
+            'pia': 'piano',
+            'sax': 'saxophone',
+            'tru': 'trumpet',
+            'vio': 'violin',
+            'voi': 'voice'
+        }
+
+        # Debug: Check a few sample directories and their labels
+        print(f"Dataset initialization complete. Final dataset size: {len(self.dirs)}")
+        if len(self.dirs) > 0:
+            print("Sample directories:")
+            for i, dir_path in enumerate(self.dirs[:3]):
+                print(f"  {i}: {dir_path.name}")
+                # Test label parsing
+                try:
+                    labels = self._parse_labels_from_folder_name(dir_path.name)
+                    if labels:
+                        print(f"    -> Parsed labels: {labels}")
+                    else:
+                        print(f"    -> No valid labels found")
+                except Exception as e:
+                    print(f"    -> Error parsing label: {e}")
+
+    def _parse_labels_from_folder_name(self, folder_name):
+        """
+        Parse instrument labels from folder name.
+
+        Handles various formats:
+        - Mixed samples: "mixed_3_piano", "mixed_68_trumpet_voice"
+        - Original IRMAS: "238__[org][dru][jaz_blu]1125__1", "[pia][jaz_blu]1471__1"
+        - Simple format: "piano_123", "trumpet_456"
+        """
+        labels = []
+
+        # Handle original IRMAS samples with complex naming
+        # Look for patterns like [cel], [pia], [org], etc.
+        irmas_pattern = r'\[([a-z]{3})\]'
+        irmas_matches = re.findall(irmas_pattern, folder_name)
+
+        for irmas_label in irmas_matches:
+            if irmas_label in self.irmas_to_label_map:
+                our_label = self.irmas_to_label_map[irmas_label]
+                if our_label not in labels:  # Avoid duplicates
+                    labels.append(our_label)
+
+        # If no IRMAS pattern found, try simple format
+        if not labels:
+            # Try simple format: "piano_123", "trumpet_456"
+            label_str = folder_name.split("_")[0]
+            if label_str in self.label_map:
+                labels.append(label_str)
+            elif label_str in self.irmas_to_label_map:
+                labels.append(self.irmas_to_label_map[label_str])
+
+        return labels
+
+    def __len__(self):
+        return len(self.dirs)
+
+    def __getitem__(self, idx):
+        # Get the directory for this audio file
+        audio_dir = self.dirs[idx]
+
+        # Parse labels from folder name
+        y = torch.zeros(len(LABELS), dtype=torch.long)
+        folder_name = audio_dir.name
+
+        # Parse labels using the improved function
+        parsed_labels = self._parse_labels_from_folder_name(folder_name)
+
+        # Set the corresponding indices in the label vector
+        for label in parsed_labels:
+            if label in self.label_map:
+                y[self.label_map[label]] = 1
+
+        # Load the log-mel spectrogram
+        spec_path = audio_dir / "logmel.npy"
+
+        if spec_path.exists():
+            try:
+                spec = np.load(spec_path)
+            except (ValueError, EOFError) as e:  # <- corrupt or half-written file
+                print(f"⚠️  Corrupt spectrogram: {spec_path} – {e}")
+                spec = np.zeros((128, 100), dtype=np.float32)  # fallback
+        else:
+            print(f"Warning: Missing spectrogram for {spec_path}")
+            spec = np.zeros((128, 100), dtype=np.float32)
+
+        spec_tensor = torch.tensor(spec).unsqueeze(0)  # [1,H,W]
+
+        # Debug: Check if we have any valid labels
+        if y.sum() == 0:
+            print(f"Warning: No valid labels found for {folder_name}")
+
+        return spec_tensor, y
+
+
 def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_stft=True, max_samples=None):
     """
     Create train and validation dataloaders
@@ -218,20 +376,25 @@ def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_st
         batch_size: Batch size
         num_workers: Number of workers for data loading
         use_multi_stft: Whether to use MultiSTFTNpyDataset (for MultiSTFTCNN model)
+                        If False, uses LogMelNpyDataset
         max_samples: Maximum number of samples to use for training (None for all samples)
 
     Returns:
         train_loader, val_loader: DataLoader objects for training and validation
     """
     print(f"Creating training dataset with max_samples={max_samples}")
-    train_ds = MultiSTFTNpyDataset(train_dir, max_samples=max_samples)
+    
+    if use_multi_stft:
+        train_ds = MultiSTFTNpyDataset(train_dir, max_samples=max_samples)
+        val_ds = MultiSTFTNpyDataset(val_dir)
+        collate_fn = multi_stft_pad_collate
+    else:
+        train_ds = LogMelNpyDataset(train_dir, max_samples=max_samples)
+        val_ds = LogMelNpyDataset(val_dir)
+        collate_fn = log_mel_pad_collate
+    
     print(f"Training dataset size: {len(train_ds)}")
-
-    print(f"Creating validation dataset...")
-    val_ds = MultiSTFTNpyDataset(val_dir)
     print(f"Validation dataset size: {len(val_ds)}")
-
-    collate_fn = multi_stft_pad_collate
 
     if len(train_ds) == 0:
         raise ValueError("Training dataset is empty! Check your data preprocessing and label parsing.")

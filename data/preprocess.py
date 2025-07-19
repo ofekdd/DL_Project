@@ -50,14 +50,82 @@ def generate_multi_stft(
     return result
 
 
+def generate_log_mel_spectrogram(
+        y: np.ndarray,
+        sr: int,
+        n_fft=2048,
+        hop_length=512,
+        n_mels=128,
+        fmin=20,
+        fmax=11025
+):
+    """
+    Generates a single log-mel spectrogram for the entire frequency range.
+    
+    Parameters:
+        y (np.ndarray): Audio waveform
+        sr (int): Sampling rate
+        n_fft (int): FFT window size
+        hop_length (int): Hop length for STFT
+        n_mels (int): Number of mel bands
+        fmin (int): Minimum frequency
+        fmax (int): Maximum frequency
+        
+    Returns:
+        np.ndarray: Log-mel spectrogram of shape (n_mels, time)
+    """
+    # Generate mel spectrogram
+    mel_spec = librosa.feature.melspectrogram(
+        y=y, 
+        sr=sr, 
+        n_fft=n_fft,
+        hop_length=hop_length,
+        n_mels=n_mels,
+        fmin=fmin,
+        fmax=fmax
+    )
+    
+    # Convert to log scale (dB)
+    log_mel_spec = librosa.power_to_db(mel_spec, ref=np.max).astype(np.float32)
+    
+    return log_mel_spec
+
+
 def process_file(wav_path, cfg):
     y, sr = librosa.load(wav_path, sr=cfg['sample_rate'], mono=True)
     return generate_multi_stft(y, sr)
 
 
+def process_file_mel(wav_path, cfg):
+    """
+    Process an audio file to generate a log-mel spectrogram.
+    
+    Args:
+        wav_path: Path to the audio file
+        cfg: Configuration dictionary with sample_rate and mel_params
+        
+    Returns:
+        np.ndarray: Log-mel spectrogram
+    """
+    y, sr = librosa.load(wav_path, sr=cfg['sample_rate'], mono=True)
+    
+    # Get mel parameters from config or use defaults
+    mel_params = cfg.get('mel_params', {})
+    n_fft = mel_params.get('n_fft', 2048)
+    hop_length = mel_params.get('hop_length', 512)
+    n_mels = mel_params.get('n_mels', 128)
+    fmin = mel_params.get('fmin', 20)
+    fmax = mel_params.get('fmax', 11025)
+    
+    return generate_log_mel_spectrogram(
+        y, sr, n_fft=n_fft, hop_length=hop_length, 
+        n_mels=n_mels, fmin=fmin, fmax=fmax
+    )
+
+
 def preprocess_data(irmas_root, out_dir, cfg, original_data_percentage=1.0):
     """
-    Preprocess IRMAS training **and** testing data.
+    Preprocess IRMAS training **and** testing data using multi-STFT approach.
 
     Args:
         irmas_root (str | Path): Path pointing at the base directory that
@@ -177,6 +245,163 @@ def preprocess_data(irmas_root, out_dir, cfg, original_data_percentage=1.0):
 
                 for (band, n_fft), spec in generate_specs(y, sr).items():
                     np.save(sample_dir / f"{band}_fft{n_fft}.npy", spec)
+            except Exception as e:
+                print(f"❌ {wav}: {e}")
+
+    # --------------------------------------------------------------------- #
+    # 3) SUMMARY
+    # --------------------------------------------------------------------- #
+    def _count(split_dir, tag):
+        return len(
+            [d for d in split_dir.iterdir() if d.is_dir() and d.name.startswith(tag)]
+        )
+
+    print("\n📋  Final counts")
+    for split, p in [("Train", train_dir), ("Val", val_dir), ("Test", test_dir)]:
+        if p.exists():
+            print(
+                f"   {split:<5}: {len(list(p.iterdir())):>5} samples"
+                f"  (original={_count(p,'original')}, irmasTest={_count(p,'irmasTest')})"
+            )
+
+    print(f"\n✅ Preprocessing finished. Features saved to {out_dir}")
+
+
+def preprocess_data_mel(irmas_root, out_dir, cfg, original_data_percentage=1.0):
+    """
+    Preprocess IRMAS training **and** testing data using log-mel spectrograms.
+
+    Args:
+        irmas_root (str | Path): Path pointing at the base directory that
+                                 contains IRMAS-TrainingData *and* the
+                                 IRMAS-TestingData* folders / zips you extracted.
+        out_dir (str | Path):  Destination directory for spectrogram features.
+        cfg (dict):            Config dict (expects 'sample_rate' key).
+        original_data_percentage (float): Fraction of training data to keep.
+    """
+    # --------------------------------------------------------------------- #
+    # Imports (kept local so the function is self-contained)
+    # --------------------------------------------------------------------- #
+    import os, random, itertools
+    from pathlib import Path
+    from tqdm import tqdm
+    import librosa, numpy as np
+
+    # --------------------------------------------------------------------- #
+    # Helper
+    # --------------------------------------------------------------------- #
+    def generate_mel_spec(y, sr):
+        """Wrapper around generate_log_mel_spectrogram helper."""
+        # Get mel parameters from config or use defaults
+        mel_params = cfg.get('mel_params', {})
+        n_fft = mel_params.get('n_fft', 2048)
+        hop_length = mel_params.get('hop_length', 512)
+        n_mels = mel_params.get('n_mels', 128)
+        fmin = mel_params.get('fmin', 20)
+        fmax = mel_params.get('fmax', 11025)
+        
+        return generate_log_mel_spectrogram(
+            y, sr, n_fft=n_fft, hop_length=hop_length, 
+            n_mels=n_mels, fmin=fmin, fmax=fmax
+        )
+
+    # --------------------------------------------------------------------- #
+    # Prep output directories
+    # --------------------------------------------------------------------- #
+    out_dir = Path(out_dir)
+    train_dir, val_dir, test_dir = (out_dir / s for s in ("train", "val", "test"))
+    for p in (train_dir, val_dir, test_dir):
+        p.mkdir(parents=True, exist_ok=True)
+
+    # --------------------------------------------------------------------- #
+    # 1) TRAIN / VAL  (IRMAS-TrainingData)
+    # --------------------------------------------------------------------- #
+    irmas_root = Path(irmas_root)
+    train_src = irmas_root / "IRMAS-TrainingData"
+    if not train_src.exists():
+        raise FileNotFoundError(f"Expected training data at {train_src}")
+
+    wav_files = list(train_src.rglob("*.wav"))
+    if not wav_files:
+        raise RuntimeError(f"No wavs found under {train_src}")
+
+    print(f"🎻 Found {len(wav_files)} training wavs")
+    # percentage filter ---------------------------------------------------- #
+    if 0 < original_data_percentage < 1.0:
+        k = int(len(wav_files) * original_data_percentage)
+        wav_files = random.sample(wav_files, k)
+        print(f"⚖️  Sub-sampling: {k} files ({original_data_percentage*100:.1f}% )")
+
+    # shuffle + split 80/20 ------------------------------------------------ #
+    random.shuffle(wav_files)
+    split_idx = int(len(wav_files) * 0.8)
+    tr_files, val_files = wav_files[:split_idx], wav_files[split_idx:]
+
+    def _process_split(files, split_dir, prefix):
+        for i, wav in enumerate(
+            tqdm(files, desc=f"→ {split_dir.name} ({len(files)})")
+        ):
+            try:
+                y, sr = librosa.load(wav, sr=cfg["sample_rate"], mono=True)
+                irmas_label = wav.parent.name  # single-label folders
+                base = wav.stem
+                sample_dir = split_dir / f"{prefix}_{irmas_label}_{i:04d}_{base}"
+                sample_dir.mkdir(parents=True, exist_ok=True)
+
+                # Generate and save a single log-mel spectrogram
+                mel_spec = generate_mel_spec(y, sr)
+                np.save(sample_dir / "logmel.npy", mel_spec)
+            except Exception as e:
+                print(f"❌ {wav}: {e}")
+
+    print(f"📊 Train/val split → {len(tr_files)} train | {len(val_files)} val")
+    _process_split(tr_files, train_dir, "original")
+    _process_split(val_files, val_dir, "original")
+
+    # --------------------------------------------------------------------- #
+    # 2) TEST  (all IRMAS-TestingData* folders)  – 100 %
+    # --------------------------------------------------------------------- #
+    test_roots = [
+        p for p in irmas_root.glob("IRMAS-TestingData-Part*")
+        if p.is_dir() and any(p.rglob("*.wav"))
+    ]
+    if not test_roots:
+        sf = irmas_root / "IRMAS-TestingData"
+        if sf.exists():
+            test_roots = [sf]
+    else:
+        test_wavs = list(
+            itertools.chain.from_iterable(tr.rglob("*.wav") for tr in test_roots)
+        )
+        print(f"🎯 Found {len(test_wavs)} testing wavs across {len(test_roots)} parts.")
+
+        # NEW ▸ quick-run cap
+        cap = cfg.get("max_test_samples")
+        if cap is not None and len(test_wavs) > cap:
+            random.shuffle(test_wavs)
+            test_wavs = test_wavs[:cap]
+            print(f"⚖️  Capping test set to {cap} samples (quick-run mode)")
+
+        for i, wav in enumerate(tqdm(test_wavs, desc="→ test")):
+            try:
+                y, sr = librosa.load(wav, sr=cfg["sample_rate"], mono=True)
+
+                # concat multi-labels from .txt (if available)
+                txt = wav.with_suffix(".txt")
+                if txt.exists():
+                    with open(txt) as fh:
+                        lbls = [ln.strip() for ln in fh if ln.strip()]
+                    lbl_tag = "+".join(lbls) if lbls else "unknown"
+                else:
+                    lbl_tag = "unknown"
+
+                base = wav.stem
+                sample_dir = test_dir / f"irmasTest_{lbl_tag}_{i:04d}_{base}"
+                sample_dir.mkdir(parents=True, exist_ok=True)
+
+                # Generate and save a single log-mel spectrogram
+                mel_spec = generate_mel_spec(y, sr)
+                np.save(sample_dir / "logmel.npy", mel_spec)
             except Exception as e:
                 print(f"❌ {wav}: {e}")
 

@@ -6,63 +6,95 @@ from data.preprocess import generate_multi_stft
 from utils.model_loader import load_model_from_checkpoint
 from var import LABELS, n_ffts, band_ranges_as_tuples
 
-def extract_features(path, cfg):
+def extract_features(path, cfg, use_log_mel=False):
     """
     Extract 3 spectrograms (3 window sizes × 3 frequency bands) from audio file.
 
     Args:
         path: Path to audio file
         cfg: Configuration dictionary
+        use_log_mel: Whether to use log-mel spectrogram instead of multi-STFT
 
     Returns:
-        List of 9 tensors, each of shape [1, 1, F, T]
+        If use_log_mel=False: List of 3 tensors, each of shape [1, 1, F, T]
+        If use_log_mel=True: Single tensor of shape [1, 1, F, T]
     """
     y, sr = librosa.load(path, sr=cfg['sample_rate'], mono=True)
-    specs_dict = generate_multi_stft(y, sr)
+    
+    if use_log_mel:
+        # Get mel parameters from config or use defaults
+        mel_params = cfg.get('mel_params', {})
+        n_fft = mel_params.get('n_fft', 2048)
+        hop_length = mel_params.get('hop_length', 512)
+        n_mels = mel_params.get('n_mels', 128)
+        fmin = mel_params.get('fmin', 20)
+        fmax = mel_params.get('fmax', 11025)
+        
+        # Import the function here to avoid circular imports
+        from data.preprocess import generate_log_mel_spectrogram
+        
+        # Generate log-mel spectrogram
+        log_mel_spec = generate_log_mel_spectrogram(
+            y, sr, n_fft=n_fft, hop_length=hop_length, 
+            n_mels=n_mels, fmin=fmin, fmax=fmax
+        )
+        
+        # Convert to tensor
+        spec_tensor = torch.tensor(log_mel_spec).unsqueeze(0).unsqueeze(0)  # [1, 1, F, T]
+        return spec_tensor
+    else:
+        # Original multi-STFT approach
+        specs_dict = generate_multi_stft(y, sr)
 
-    # For MultiSTFTCNN, we need all 3 spectrograms in the correct order
-    specs_list = []
-    optimized_stfts = [
-        ("0-1000Hz", 1024),
-        ("1000-4000Hz", 512),
-        ("4000-11025Hz", 256),
-    ]
+        # For MultiSTFTCNN, we need all 3 spectrograms in the correct order
+        specs_list = []
+        optimized_stfts = [
+            ("0-1000Hz", 1024),
+            ("1000-4000Hz", 512),
+            ("4000-11025Hz", 256),
+        ]
 
-    for band_label, n_fft in optimized_stfts:
-        key = (band_label, n_fft)
-        if key in specs_dict:
-            spec = specs_dict[key]
-            spec_tensor = torch.tensor(spec).unsqueeze(0).unsqueeze(0)  # [1, 1, F, T]
-            specs_list.append(spec_tensor)
-        else:
-            # If a specific spectrogram is missing, use a zero tensor of appropriate shape
-            print(f"Warning: Missing spectrogram for {key}")
-            # Use a small dummy tensor as fallback
-            specs_list.append(torch.zeros(1, 1, 10, 10))
+        for band_label, n_fft in optimized_stfts:
+            key = (band_label, n_fft)
+            if key in specs_dict:
+                spec = specs_dict[key]
+                spec_tensor = torch.tensor(spec).unsqueeze(0).unsqueeze(0)  # [1, 1, F, T]
+                specs_list.append(spec_tensor)
+            else:
+                # If a specific spectrogram is missing, use a zero tensor of appropriate shape
+                print(f"Warning: Missing spectrogram for {key}")
+                # Use a small dummy tensor as fallback
+                specs_list.append(torch.zeros(1, 1, 10, 10))
 
-    return specs_list
+        return specs_list
 
 
-def predict(model, wav_path, cfg):
+def predict(model, wav_path, cfg, use_log_mel=False):
     """
     Run inference on a single audio file.
 
     Args:
-        model: Trained model (either MultiSTFTCNN or MultiSTFTCNN_WithPANNs)
+        model: Trained model (MultiSTFTCNN, MultiSTFTCNN_WithPANNs, LogMelCNN, or LogMelCNN_WithPANNs)
         wav_path: Path to audio file
         cfg: Configuration dictionary
+        use_log_mel: Whether to use log-mel spectrogram instead of multi-STFT
 
     Returns:
         Dictionary mapping label names to prediction scores
     """
     model.eval()
 
-    # Extract features as list of 3 spectrograms
-    specs_list = extract_features(wav_path, cfg)
+    # Extract features based on the model type
+    features = extract_features(wav_path, cfg, use_log_mel=use_log_mel)
 
     with torch.no_grad():
-        # Model expects list of tensors as input
-        logits = model(specs_list).squeeze()
+        # Process features based on model type
+        if use_log_mel:
+            # LogMelCNN models expect a single tensor
+            logits = model(features).squeeze()
+        else:
+            # MultiSTFTCNN models expect a list of tensors
+            logits = model(features).squeeze()
 
         # For single-label classification, apply softmax to get probabilities
         if len(logits.shape) > 0:  # Handle single sample case
@@ -73,7 +105,7 @@ def predict(model, wav_path, cfg):
     return {label: float(probs[i]) for i, label in enumerate(LABELS)}
 
 
-def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
+def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True, use_log_mel=False):
     """
     Enhanced prediction function that can show ground truth labels.
     Uses softmax to pick the most likely instrument.
@@ -83,12 +115,13 @@ def predict_with_ground_truth(model, wav_path, cfg, show_ground_truth=True):
         wav_path: Path to wav file
         cfg: Configuration
         show_ground_truth: Whether to parse and show ground truth from filename
+        use_log_mel: Whether to use log-mel spectrogram instead of multi-STFT
 
     Returns:
         Dictionary with predictions and optionally ground truth
     """
     # Get predictions (softmax probabilities)
-    predictions = predict(model, wav_path, cfg)
+    predictions = predict(model, wav_path, cfg, use_log_mel=use_log_mel)
 
     # Get the top prediction (most likely instrument)
     top_prediction = max(predictions.items(), key=lambda x: x[1])[0]
