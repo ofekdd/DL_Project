@@ -7,7 +7,7 @@ import torch
 import numpy as np
 from pathlib import Path
 
-from models.multi_stft_cnn import MultiSTFTCNN
+#from models.multi_stft_cnn import MultiSTFTCNN
 from inference.predict import extract_features, predict_with_ground_truth
 from var import LABELS
 
@@ -18,11 +18,10 @@ def evaluate_with_threshold_clarity(model, wav_path, cfg, threshold=0.6, show_de
     from var import LABELS
 
     # Extract features
-    specs_list = extract_features(wav_path, cfg)
+    features = extract_features(wav_path, cfg)
 
-    # Make predictions
     with torch.no_grad():
-        preds = model(specs_list).squeeze()
+        preds = model(features).squeeze()
         probs = torch.sigmoid(preds).numpy()
 
     # Get predictions and ground truth
@@ -179,48 +178,13 @@ def run_comprehensive_threshold_evaluation(model, test_files, cfg, threshold=0.6
     }
 
 
+from utils.model_loader import load_model
+
 def load_model_from_checkpoint(ckpt_path, n_classes, cfg=None):
-    """Load model from checkpoint with proper handling of key prefixes."""
-    # Try to determine if this is a PANNs-enhanced model based on filename
-    is_panns = 'panns' in str(ckpt_path).lower()
-
-    if is_panns:
-        print(f"Detected PANNs-enhanced model from checkpoint filename")
-        from visualization.panns_utils import load_panns_model_from_checkpoint
-        return load_panns_model_from_checkpoint(ckpt_path, n_classes, cfg)
-
-    # Regular model loading
-    model = MultiSTFTCNN(n_classes=n_classes)
-
-    # Load checkpoint
-    checkpoint = torch.load(ckpt_path, map_location="cpu")
-
-    # Extract state dict - handle both direct state_dict and PyTorch Lightning format
-    if "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
-    else:
-        state_dict = checkpoint
-
-    # Remove "model." prefix if present (PyTorch Lightning adds this)
-    new_state_dict = {}
-    for key, value in state_dict.items():
-        if key.startswith("model."):
-            new_key = key[6:]  # Remove "model." prefix
-            new_state_dict[new_key] = value
-        else:
-            new_state_dict[key] = value
-
-    # Load the corrected state dict
-    try:
-        model.load_state_dict(new_state_dict, strict=True)
-        print("✅ Model loaded successfully with strict=True")
-    except RuntimeError as e:
-        print(f"⚠️ Strict loading failed, trying with strict=False: {e}")
-        model.load_state_dict(new_state_dict, strict=False)
-        print("✅ Model loaded with strict=False (some weights may be missing)")
-
+    model = load_model(ckpt_path, n_classes=n_classes)
     model.eval()
     return model
+
 
 
 def main():

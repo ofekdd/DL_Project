@@ -9,48 +9,46 @@ from models.multi_stft_cnn import MultiSTFTCNN
 from models.panns_enhanced import MultiSTFTCNN_WithPANNs
 from data.download_pnn import download_panns_checkpoint
 from var import LABELS
+from models.panns_enhanced import WaveletCNN
 
 
 def detect_model_architecture(checkpoint_path):
-    """Detect model architecture by examining checkpoint state dict keys.
-
-    Args:
-        checkpoint_path: Path to checkpoint file
-
-    Returns:
-        str: 'panns' or 'regular'
-    """
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
-    # Extract state dict
     if "state_dict" in checkpoint:
         state_dict = checkpoint["state_dict"]
     else:
         state_dict = checkpoint
 
-    # Check for architecture-specific keys
-    has_feature_extractors = any('feature_extractors' in key for key in state_dict.keys())
-    has_fusion = any('fusion' in key for key in state_dict.keys())
-    has_branches = any('branches' in key for key in state_dict.keys())
+    has_wavelet = any('wavelet_conv' in key for key in state_dict)
+    has_feature_extractors = any('feature_extractors' in key for key in state_dict)
+    has_fusion = any('fusion' in key for key in state_dict)
+    has_branches = any('branches' in key for key in state_dict)
 
     print(f"🔍 Checkpoint analysis:")
+    print(f"  - wavelet keys: {has_wavelet}")
     print(f"  - feature_extractors keys: {has_feature_extractors}")
     print(f"  - fusion keys: {has_fusion}")
     print(f"  - branches keys: {has_branches}")
 
-    if has_feature_extractors and has_fusion and not has_branches:
+    if has_wavelet:
+        return 'wavelet'
+    elif has_feature_extractors and has_fusion and not has_branches:
         return 'panns'
     elif has_branches and not has_feature_extractors:
         return 'regular'
     else:
-        # Fallback to filename detection
         filename = Path(checkpoint_path).name.lower()
-        if 'panns' in filename:
+        if 'wavelet' in filename:
+            print("  - Using filename-based detection: Wavelet")
+            return 'wavelet'
+        elif 'panns' in filename:
             print("  - Using filename-based detection: PANNs")
             return 'panns'
         else:
             print("  - Using filename-based detection: Regular")
             return 'regular'
+
 
 
 def clean_state_dict(state_dict):
@@ -121,9 +119,11 @@ def load_model(checkpoint_path, cfg=None, n_classes=None, force_architecture=Non
             pretrained_path=panns_path,
             freeze_backbone=False
         )
+    elif architecture == 'wavelet':
+        print(f"🏗️ Creating WaveletCNN model")
+        model = WaveletCNN(n_classes=n_classes)
     else:
         print(f"🏗️ Creating regular MultiSTFTCNN model")
-        # Use configuration if provided
         if cfg:
             n_branches = cfg.get('n_branches', 9)
             branch_output_dim = cfg.get('branch_output_dim', 128)
@@ -132,8 +132,8 @@ def load_model(checkpoint_path, cfg=None, n_classes=None, force_architecture=Non
             branch_output_dim = 128
 
         model = MultiSTFTCNN(
-            n_classes=n_classes, 
-            n_branches=n_branches, 
+            n_classes=n_classes,
+            n_branches=n_branches,
             branch_output_dim=branch_output_dim
         )
 

@@ -56,7 +56,7 @@ def multi_stft_pad_collate(batch):
     return padded_specs, torch.stack(ys)
 
 
-class MultiSTFTNpyDataset(Dataset):
+class WaveletNpyDataset(Dataset):
     """
     Dataset for loading all 3 spectrograms (optimized window sizes for each frequency band) for each audio file.
     """
@@ -74,7 +74,8 @@ class MultiSTFTNpyDataset(Dataset):
                     max_samples = None
 
         # Get all directories (each directory corresponds to one audio file)
-        self.dirs = list(set(file.parent for file in pathlib.Path(root).rglob("*.npy")))
+        self.dirs = [p for p in pathlib.Path(root).iterdir() if (p / "wavelet.npy").exists()]
+
 
         print(f"Found {len(self.dirs)} total sample directories in {root}")
 
@@ -191,28 +192,16 @@ class MultiSTFTNpyDataset(Dataset):
         # Load all 3 spectrograms
         specs = []
         missing_files = 0
-        optimized_stfts = [
-            ("0-1000Hz", 1024),
-            ("1000-4000Hz", 512),
-            ("4000-11025Hz", 256),
-        ]
+        wavelet_path = audio_dir / "wavelet.npy"
+        if not wavelet_path.exists():
+            raise FileNotFoundError(f"Missing wavelet.npy in {audio_dir}")
+        try:
+            spec = np.load(wavelet_path)
+        except Exception as e:
+            print(f"⚠️ Failed to load {wavelet_path}: {e}")
+            spec = np.zeros((10, 10), dtype=np.float32)
 
-        for band_label, n_fft in optimized_stfts:
-            spec_path = audio_dir / f"{band_label}_fft{n_fft}.npy"
-
-            if spec_path.exists():  #
-                try:
-                    spec = np.load(spec_path)
-                except (ValueError, EOFError) as e:  # <- corrupt or half-written file
-                    print(f"⚠️  Corrupt spectrogram: {spec_path} – {e}")
-                    spec = np.zeros((10, 10), dtype=np.float32)  # fallback
-            else:
-                print(f"Warning: Missing spectrogram for {spec_path}")
-                missing_files += 1
-                spec = np.zeros((10, 10), dtype=np.float32)
-
-            spec_tensor = torch.tensor(spec).unsqueeze(0)  # [1,H,W]
-            specs.append(spec_tensor)
+        spec_tensor = torch.tensor(spec).unsqueeze(0)  # shape: [1, H, W]
 
         # Debug: Check if we have any valid labels
         if y.sum() == 0:
@@ -221,7 +210,8 @@ class MultiSTFTNpyDataset(Dataset):
         if missing_files > 0:
             print(f"Warning: {missing_files}/3 spectrograms missing for {folder_name}")
 
-        return specs, y
+        return spec_tensor, y
+
 
 
 def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_stft=True, max_samples=None):
@@ -240,14 +230,14 @@ def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_st
         train_loader, val_loader: DataLoader objects for training and validation
     """
     print(f"Creating training dataset with max_samples={max_samples}")
-    train_ds = MultiSTFTNpyDataset(train_dir, max_samples=max_samples)
+    train_ds = WaveletNpyDataset(train_dir, max_samples=max_samples)
     print(f"Training dataset size: {len(train_ds)}")
 
     print(f"Creating validation dataset...")
-    val_ds = MultiSTFTNpyDataset(val_dir)
+    val_ds = WaveletNpyDataset(val_dir)
     print(f"Validation dataset size: {len(val_ds)}")
 
-    collate_fn = multi_stft_pad_collate
+    collate_fn = pad_collate
 
     if len(train_ds) == 0:
         raise ValueError("Training dataset is empty! Check your data preprocessing and label parsing.")

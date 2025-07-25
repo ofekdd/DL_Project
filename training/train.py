@@ -2,7 +2,7 @@
 """Entry point for training."""
 import pytorch_lightning as pl, torch, yaml, argparse
 from torchmetrics import MetricCollection
-from models.multi_stft_cnn import MultiSTFTCNN
+from models.panns_enhanced import WaveletCNN
 from training.callbacks import default_callbacks
 from training.metrics import MetricCollection
 from data.dataset import create_dataloaders
@@ -14,10 +14,8 @@ class LitModel(pl.LightningModule):
         super().__init__()
         n_classes = len(LABELS)
         # Using MultiSTFTCNN model directly as specified
-        self.model = MultiSTFTCNN(
+        self.model = WaveletCNN(
             n_classes=n_classes,
-            n_branches=3,
-            branch_output_dim=cfg.get('branch_output_dim', 128)
         )
         self.metrics = MetricCollection(n_classes)
         self.lr = float(cfg["learning_rate"])  # Ensure learning_rate is a float

@@ -2,46 +2,28 @@
 """CLI inference """
 import argparse, yaml, torch, librosa, numpy as np, pathlib
 
-from data.preprocess import generate_multi_stft
+from data.preprocess import generate_wavelet_scalogram
 from models.multi_stft_cnn import MultiSTFTCNN
 from var import LABELS, n_ffts, band_ranges_as_tuples
 
 
 def extract_features(path, cfg):
     """
-    Extract 3 spectrograms (3 window sizes × 3 frequency bands) from audio file.
+    Extract a wavelet scalogram from an audio file and return it as a tensor.
 
     Args:
         path: Path to audio file
         cfg: Configuration dictionary
 
     Returns:
-        List of 9 tensors, each of shape [1, 1, F, T]
+        A tensor of shape [1, 1, H, W]
     """
+
     y, sr = librosa.load(path, sr=cfg['sample_rate'], mono=True)
-    specs_dict = generate_multi_stft(y, sr)
+    scalogram = generate_wavelet_scalogram(y, sr, num_scales=cfg.get("num_scales", 512))
+    scalogram_tensor = torch.tensor(scalogram).unsqueeze(0).unsqueeze(0)  # shape [1, 1, H, W]
+    return scalogram_tensor
 
-    # For MultiSTFTCNN, we need all 3 spectrograms in the correct order
-    specs_list = []
-    optimized_stfts = [
-        ("0-1000Hz", 1024),
-        ("1000-4000Hz", 512),
-        ("4000-11025Hz", 256),
-    ]
-
-    for band_label, n_fft in optimized_stfts:
-        key = (band_label, n_fft)
-        if key in specs_dict:
-                spec = specs_dict[key]
-                spec_tensor = torch.tensor(spec).unsqueeze(0).unsqueeze(0)  # [1, 1, F, T]
-                specs_list.append(spec_tensor)
-        else:
-                # If a specific spectrogram is missing, use a zero tensor of appropriate shape
-                print(f"Warning: Missing spectrogram for {key}")
-                # Use a small dummy tensor as fallback
-                specs_list.append(torch.zeros(1, 1, 10, 10))
-
-    return specs_list
 
 
 def load_model_from_checkpoint(ckpt_path, n_classes):
@@ -74,11 +56,10 @@ def predict(model, wav_path, cfg):
     model.eval()
 
     # Extract features as list of 3 spectrograms
-    specs_list = extract_features(wav_path, cfg)
+    features = extract_features(wav_path, cfg)
 
     with torch.no_grad():
-        # Model expects list of tensors as input
-        preds = model(specs_list).squeeze()
+        preds = model(features).squeeze()
 
         # Check if the model already applies sigmoid (PANNs model does in its classifier)
         # If model is MultiSTFTCNN_WithPANNs, it already has sigmoid in its classifier
