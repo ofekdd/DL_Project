@@ -4,7 +4,38 @@ import argparse, librosa, numpy as np, pathlib, tqdm, yaml, os, random, itertool
 from scipy.signal import cwt, morlet2
 from var import LABELS
 
-def generate_wavelet_scalogram(y: np.ndarray, sr: int, num_scales: int = 512):
+import torch
+import numpy as np
+from kymatio.torch import Scattering1D
+import librosa
+
+
+def generate_wavelet_scalogram_kymatio(y: np.ndarray, sr: int, J: int = 8):
+    """
+    Compute a 1D wavelet scattering scalogram using Kymatio.
+
+    Args:
+        y (np.ndarray): Input waveform.
+        sr (int): Sample rate.
+        J (int): Wavelet scale (controls number of output frequency bands).
+
+    Returns:
+        np.ndarray: Scattering transform coefficients as a 2D scalogram.
+    """
+    # Convert waveform to torch tensor
+    y_tensor = torch.tensor(y, dtype=torch.float32).unsqueeze(0)  # [1, T]
+    T = y_tensor.shape[-1]
+
+    # Initialize scattering transform
+    scattering = Scattering1D(J=J, shape=T)
+    Sx = scattering(y_tensor)
+
+    # Convert to numpy and return
+    scalogram = Sx.squeeze(0).numpy()
+    return scalogram
+
+
+def generate_wavelet_scalogram_old(y: np.ndarray, sr: int, num_scales: int = 512):
     """
     Compute complex Morlet wavelet transform and return magnitude scalogram.
     """
