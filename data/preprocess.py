@@ -34,7 +34,7 @@ def generate_wavelet_scalogram_kymatio(y: np.ndarray, sr: int, J: int = 8):
     scalogram = Sx.squeeze(0).numpy()
     return scalogram
 
-
+"""""
 def generate_wavelet_scalogram_old(y: np.ndarray, sr: int, num_scales: int = 512):
     """
     Compute complex Morlet wavelet transform and return magnitude scalogram.
@@ -44,7 +44,7 @@ def generate_wavelet_scalogram_old(y: np.ndarray, sr: int, num_scales: int = 512
     mag = np.abs(scalogram)
     mag_db = librosa.amplitude_to_db(mag, ref=np.max).astype(np.float32)
     return mag_db
-
+"""
 def process_file(wav_path, cfg):
     y, sr = librosa.load(wav_path, sr=cfg["sample_rate"], mono=True)
     return generate_wavelet_scalogram(y, sr)
