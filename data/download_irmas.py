@@ -71,13 +71,29 @@ def _pick_testing_root(p: Path) -> Path:
     raise FileNotFoundError(f"Could not locate testing data under {p}")
 
 
-def download_and_extract_zip(url: str, out_path: pathlib.Path):
-    zip_path = out_path / url.split("/")[-1].split("?")[0]
+def download_and_extract_zip(url: str, out_path: pathlib.Path, expected_folder: str | None = None):
+    zip_name = url.split("/")[-1].split("?")[0]
+    zip_path = out_path / zip_name
+
+    # If expected extracted folder exists with wavs, skip both download and extract
+    if expected_folder is not None:
+        extracted_dir = out_path / expected_folder
+        if extracted_dir.exists() and any(extracted_dir.rglob("*.wav")):
+            print(f"✅ {expected_folder} already present at {out_path}, skipping download & extraction.")
+            return
+
     if not zip_path.exists():
         print(f"⬇️  Downloading {zip_path.name} ...")
         urllib.request.urlretrieve(url, zip_path)
     else:
         print(f"✅ {zip_path.name} already exists, skipping download.")
+
+    # After ensuring zip, extract only if folder missing
+    if expected_folder is not None:
+        extracted_dir = out_path / expected_folder
+        if extracted_dir.exists() and any(extracted_dir.rglob("*.wav")):
+            print(f"✅ {expected_folder} already extracted, skipping extraction.")
+            return
 
     print(f"📦 Extracting {zip_path.name} ...")
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -88,31 +104,55 @@ def main(out_dir: str):
     out_dir = pathlib.Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # If full dataset already present (training + any testing), skip downloads
+    train_ok = (out_dir / "IRMAS-TrainingData").exists() and any((out_dir / "IRMAS-TrainingData").rglob("*.wav"))
+    test_ok = any(
+        (out_dir / p).exists() and any((out_dir / p).rglob("*.wav"))
+        for p in ("IRMAS-TestingData", "IRMAS-TestingData-Part1", "IRMAS-TestingData-Part2", "IRMAS-TestingData-Part3")
+    )
+    if train_ok and test_ok:
+        print(f"✅ IRMAS already present under {out_dir}. Skipping download.")
+        return
+
     print("🚀 Downloading IRMAS dataset (training + testing)...")
 
     # Download and extract training set
-    download_and_extract_zip(IRMAS_URL, out_dir)
+    download_and_extract_zip(IRMAS_URL, out_dir, expected_folder="IRMAS-TrainingData")
 
     # Download and extract testing parts
-    download_and_extract_zip(IRMAS_TESTING_PART1_URL, out_dir)
-    download_and_extract_zip(IRMAS_TESTING_PART2_URL, out_dir)
-    download_and_extract_zip(IRMAS_TESTING_PART3_URL, out_dir)
+    download_and_extract_zip(IRMAS_TESTING_PART1_URL, out_dir, expected_folder="IRMAS-TestingData-Part1")
+    download_and_extract_zip(IRMAS_TESTING_PART2_URL, out_dir, expected_folder="IRMAS-TestingData-Part2")
+    download_and_extract_zip(IRMAS_TESTING_PART3_URL, out_dir, expected_folder="IRMAS-TestingData-Part3")
 
     print(f"\n✅ All data is ready under {out_dir.resolve()}")
 
 
 def find_irmas_root() -> pathlib.Path | None:
-    """Return the first existing path that contains IRMAS WAVs."""
-    # Check user's home directory first
-    home_path = pathlib.Path.home() / "datasets" / "irmas"
+    """Return the first existing path that contains IRMAS WAVs.
 
+    Prefers extracted folders. Also recognizes common Google Drive paths in Colab.
+    """
+    # Common roots
+    home_path = pathlib.Path.home() / "datasets" / "irmas"
+    colab_drive = pathlib.Path("/content/drive/MyDrive/datasets/IRMAS")
+    colab_scratch = pathlib.Path("/content/IRMAS")
+    project_raw = pathlib.Path("data/raw")
+
+    # Candidates where extracted data may reside
     candidates = [
-        home_path / "IRMAS-TrainingData",  # User's home directory (extracted)
-        home_path,  # User's home directory (fallback)
-        pathlib.Path("/content/IRMAS/IRMAS-TrainingData"),  # Colab scratch
-        pathlib.Path("data/raw/IRMAS/IRMAS-TrainingData"),  # Project directory (extracted)
-        pathlib.Path("data/raw/IRMAS-TrainingData"),  # Project directory alt
-        pathlib.Path("data/raw"),  # Project directory fallback
+        # Google Drive (preferred when present)
+        colab_drive / "IRMAS-TrainingData",
+        colab_drive,
+        # Colab scratch
+        colab_scratch / "IRMAS-TrainingData",
+        colab_scratch,
+        # User home
+        home_path / "IRMAS-TrainingData",
+        home_path,
+        # Project directory
+        project_raw / "IRMAS/IRMAS-TrainingData",
+        project_raw / "IRMAS-TrainingData",
+        project_raw,
     ]
 
     for p in candidates:
@@ -120,26 +160,29 @@ def find_irmas_root() -> pathlib.Path | None:
             print(f"Found IRMAS dataset at: {p}")
             return p
 
-    # If no extracted data found, check if we have zip files and extract them
+    # If no extracted data found, check for known zip files and extract
     zip_candidates = [
+        colab_drive / "IRMAS-TrainingData.zip",
+        colab_drive / "IRMAS-TestingData-Part1.zip",
+        colab_drive / "IRMAS-TestingData-Part2.zip",
+        colab_drive / "IRMAS-TestingData-Part3.zip",
         home_path / "IRMAS.zip",
-        pathlib.Path("data/raw/IRMAS.zip"),
-        pathlib.Path("/content/drive/MyDrive/datasets/IRMAS/IRMAS.zip")
+        project_raw / "IRMAS.zip",
     ]
 
     for zip_path in zip_candidates:
         if zip_path.exists():
-            print(f"Found IRMAS zip at {zip_path}, extracting...")
+            print(f"Found IRMAS archive at {zip_path}, extracting...")
             import zipfile
             extract_dir = zip_path.parent
             with zipfile.ZipFile(zip_path) as zf:
                 zf.extractall(extract_dir)
 
-            # Try to find the extracted data
-            extracted_path = extract_dir / "IRMAS-TrainingData"
-            if extracted_path.exists() and any(extracted_path.rglob("*.wav")):
-                print(f"Successfully extracted to: {extracted_path}")
-                return extracted_path
+            # After extraction, try the normal candidates again
+            for p in [extract_dir / "IRMAS-TrainingData", extract_dir]:
+                if p.exists() and any(p.rglob("*.wav")):
+                    print(f"Successfully extracted to: {p}")
+                    return p
 
     print("No IRMAS dataset found in any of the expected locations")
     return None
