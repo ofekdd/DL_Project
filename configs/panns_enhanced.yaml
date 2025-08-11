@@ -13,11 +13,6 @@ finetune_learning_rate: 0.0002  # Adjusted LR for fine-tuning
 # Training efficiency settings
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup
 
-# Dataset creation settings
-num_mixtures: 0  # Create synthetic mixtures
-min_instruments: 1  # Minimum instruments per mixture
-max_instruments: 2  # Maximum instruments per mixture
-
 # Training dataset settings
 num_epochs: 50  # Extended for two-phase training, for fast run: 2
 freeze_epochs: 4  # Increased initial epochs with frozen backbone, for fast run: 1
