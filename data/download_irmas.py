@@ -153,7 +153,7 @@ import librosa
 from var import LABELS
 
 
-def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
+def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None, use_local_cache=True):
     """
     Load training (single-label) audio from IRMAS dataset.
     """
@@ -173,15 +173,37 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
 
     print(f"Loading {len(wav_files)} training audio files...")
 
-    for wav_file in wav_files:
+    # Check if we're in Colab and should use local caching
+    IN_COLAB = 'google.colab' in sys.modules
+    local_cache_dir = None
+
+    if IN_COLAB and use_local_cache and str(irmas_path).startswith('/content/drive'):
+        # Create a local cache directory in Colab's local storage
+        local_cache_dir = Path('/tmp/irmas_cache')
+        local_cache_dir.mkdir(exist_ok=True)
+        print(f"🚀 Using local cache for faster loading: {local_cache_dir}")
+
+    for i, wav_file in enumerate(wav_files):
         try:
+            # Use local cache if available
+            if local_cache_dir:
+                cache_file = local_cache_dir / f"{wav_file.stem}_{i}.wav"
+                if not cache_file.exists():
+                    # Copy to local cache first
+                    import shutil
+                    shutil.copy2(wav_file, cache_file)
+                load_path = cache_file
+            else:
+                load_path = wav_file
+
             irmas_label = wav_file.parent.name.lower()
             our_label = IRMAS_TO_LABEL_MAP.get(irmas_label, irmas_label)
 
             if our_label not in label_map:
                 continue
 
-            y, _ = librosa.load(wav_file, sr=cfg['sample_rate'], mono=True)
+            # Load from cache or original path
+            y, _ = librosa.load(load_path, sr=cfg['sample_rate'], mono=True)
             label_vec = torch.zeros(len(LABELS), dtype=torch.long)
             label_vec[label_map[our_label]] = 1
             dataset.append((torch.tensor(y, dtype=torch.float32), label_vec))
@@ -192,8 +214,7 @@ def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
     print(f"✅ Loaded {len(dataset)} training samples.")
     return dataset
 
-
-def load_irmas_testing_dataset(test_dir, cfg):
+def load_irmas_testing_dataset(test_dir, cfg, use_local_cache=True):
     """
     Load testing (multi-label) IRMAS dataset.
     Each audio file has a corresponding .txt file listing instruments.
@@ -211,14 +232,35 @@ def load_irmas_testing_dataset(test_dir, cfg):
         wav_files = wav_files[:cap]
         print(f"⚖️  Capped to {cap} test WAVs for quick run")
 
-    print(f"Loading {len(wav_files)} testing audio files…")
+    print(f"Loading {len(wav_files)} testing audio files...")
 
-    for wav_file in wav_files:
+    # Check if we're in Colab and should use local caching
+    IN_COLAB = 'google.colab' in sys.modules
+    local_cache_dir = None
+
+    if IN_COLAB and use_local_cache and str(test_path).startswith('/content/drive'):
+        # Create a local cache directory in Colab's local storage
+        local_cache_dir = Path('/tmp/irmas_test_cache')
+        local_cache_dir.mkdir(exist_ok=True)
+        print(f"🚀 Using local cache for faster loading: {local_cache_dir}")
+
+    for i, wav_file in enumerate(wav_files):
         try:
             txt_path = wav_file.with_suffix('.txt')
             if not txt_path.exists():
                 print(f"⚠️  Missing label file for {wav_file.name}")
                 continue
+
+            # Use local cache if available
+            if local_cache_dir:
+                cache_file = local_cache_dir / f"{wav_file.stem}_{i}.wav"
+                if not cache_file.exists():
+                    # Copy to local cache first
+                    import shutil
+                    shutil.copy2(wav_file, cache_file)
+                load_path = cache_file
+            else:
+                load_path = wav_file
 
             with open(txt_path, 'r') as f:
                 label_lines = f.readlines()
@@ -234,7 +276,8 @@ def load_irmas_testing_dataset(test_dir, cfg):
                 if mapped in label_map:
                     label_vec[label_map[mapped]] = 1
 
-            y, _ = librosa.load(wav_file, sr=cfg['sample_rate'], mono=True)
+            # Load from cache or original path
+            y, _ = librosa.load(load_path, sr=cfg['sample_rate'], mono=True)
             dataset.append((torch.tensor(y, dtype=torch.float32), label_vec))
 
         except Exception as e:
