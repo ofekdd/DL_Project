@@ -5,9 +5,9 @@ import torch
 import yaml
 import argparse
 from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping, ModelCheckpoint
+from torchmetrics.classification import Accuracy
 
 from models.panns_enhanced import MultiSTFTCNN_WithPANNs
-from training.metrics import MetricCollection
 from data.dataset import create_dataloaders
 from data.download_pnn import download_panns_checkpoint
 from var import LABELS
@@ -34,7 +34,7 @@ class PANNsLitModel(pl.LightningModule):
         )
 
         # Setup metrics
-        self.metrics = MetricCollection(n_classes)
+        self.metrics = Accuracy(task="multiclass", num_classes=n_classes)
 
         # Save hyperparameters
         self.save_hyperparameters(cfg)
