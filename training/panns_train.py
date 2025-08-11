@@ -63,9 +63,10 @@ class PANNsLitModel(pl.LightningModule):
         probs = torch.nn.functional.softmax(logits, dim=1)
 
         # Calculate metrics
-        metrics = self.metrics(probs, target_classes)
+        accuracy = self.metrics(probs, target_classes)
 
-        self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}},
+        # Metrics is now a scalar tensor, not a dict
+        self.log_dict({f"{stage}/loss": loss, f"{stage}/Accuracy": accuracy},
                       prog_bar=True)
         return loss
 
