@@ -1,104 +1,106 @@
 # !/usr/bin/env python3
-"""Entry point for training."""
-import pytorch_lightning as pl, torch, yaml, argparse
-from torchmetrics import MetricCollection
-from models.multi_stft_cnn import MultiSTFTCNN
+"""Entry point for training the WaveletCNN on raw waveforms."""
+import argparse
+import yaml
+import torch
+import pytorch_lightning as pl
+import torch.nn.functional as F
+
+from models.Conv_wavelet_cnn import WaveletCNN
 from training.callbacks import default_callbacks
-from training.metrics import MetricCollection
-from data.dataset import create_dataloaders
+from training.metrics import MetricCollection  # your wrapper: mAP + F1
+from data.dataset import create_dataloaders    # <-- waveform version
 from var import LABELS
 
 
 class LitModel(pl.LightningModule):
     def __init__(self, cfg):
         super().__init__()
-        n_classes = len(LABELS)
-        # Using MultiSTFTCNN model directly as specified
-        self.model = MultiSTFTCNN(
-            n_classes=n_classes,
-            n_branches=3,
-            branch_output_dim=cfg.get('branch_output_dim', 128)
-        )
-        self.metrics = MetricCollection(n_classes)
-        self.lr = float(cfg["learning_rate"])  # Ensure learning_rate is a float
         self.save_hyperparameters(cfg)
 
-    def forward(self, x): return self.model(x)
+        n_classes = len(LABELS)
+        sr = int(cfg["sample_rate"])
+        self.model = WaveletCNN(n_classes=n_classes, sr=sr)
 
-    def common_step(self, batch, stage):
-        x, y = batch
-        logits = self(x)
+        # Your metrics wrapper returns {"mAP": ..., "F1": ...}
+        self.metrics = MetricCollection(n_classes)
+        self.lr = float(cfg["learning_rate"])
 
-        # For single-label classification, use cross-entropy loss
-        # Convert multi-hot targets to class indices if needed
-        if y.dim() > 1 and y.size(1) > 1:  # Multi-hot encoded
-            target_classes = torch.argmax(y, dim=1)  # Get the dominant instrument
-        else:  # Already single-label format
-            target_classes = y
+        print(f"[WaveletCNN] sr={sr}, n_classes={n_classes}")
 
-        loss = torch.nn.functional.cross_entropy(logits, target_classes)
+    def forward(self, x):
+        # x: [B, T] waveform
+        return self.model(x)  # probs in [0,1] (model ends with Sigmoid)
 
-        # Apply softmax to get probabilities for metrics
-        probs = torch.nn.functional.softmax(logits, dim=1)
+    def common_step(self, batch, stage: str):
+        x, y = batch                      # x: [B, T], y: [B, C] multi-hot (0/1)
+        preds = self(x)                   # preds: [B, C] in [0,1]
+        loss = F.binary_cross_entropy(preds, y.float())
 
-        # Calculate metrics
-        metrics = self.metrics(probs, target_classes)
+        # metrics expect probabilities + binary targets
+        metrics = self.metrics(preds, y)
 
-        self.log_dict({f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}},
-                      prog_bar=True)
+        self.log_dict(
+            {f"{stage}/loss": loss, **{f"{stage}/{k}": v for k, v in metrics.items()}},
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True if torch.cuda.is_available() else False,
+        )
         return loss
 
-    def training_step(self, batch, _):  return self.common_step(batch, "train")
+    def training_step(self, batch, _):
+        return self.common_step(batch, "train")
 
-    def validation_step(self, batch, _): return self.common_step(batch, "val")
+    def validation_step(self, batch, _):
+        return self.common_step(batch, "val")
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-4)
 
 
 def main(config):
-    # Handle both file path and dictionary inputs
+    # Accept a dict or a path to YAML
     if isinstance(config, dict):
         cfg = config
     else:
         with open(config, 'r') as f:
             cfg = yaml.safe_load(f)
 
-    # Get train and val directories from config, with fallback to default paths
+    # Data dirs (produced by waveform preprocess)
     train_dir = cfg.get('train_dir', "data/processed/train")
-    val_dir = cfg.get('val_dir', "data/processed/val")
+    val_dir   = cfg.get('val_dir',   "data/processed/val")
 
     print(f"Using train_dir: {train_dir}")
-    print(f"Using val_dir: {val_dir}")
+    print(f"Using val_dir  : {val_dir}")
 
-    # Use the create_dataloaders function with use_multi_stft=True
+    # Waveform dataloaders (expects waveform.npy per folder)
     train_loader, val_loader = create_dataloaders(
         train_dir=train_dir,
         val_dir=val_dir,
         batch_size=cfg['batch_size'],
         num_workers=cfg['num_workers'],
-        use_multi_stft=True,  # Use MultiSTFTNpyDataset for MultiSTFTCNN model
-        max_samples=cfg.get('max_samples', None)  # Limit number of samples if specified
+        max_samples=cfg.get('max_samples', None)  # keep a small cap for fast runs if desired
     )
 
     model = LitModel(cfg)
 
-    # Configure trainer with validation efficiency settings from config
     trainer_kwargs = {
         'max_epochs': cfg['num_epochs'],
         'callbacks': default_callbacks(),
         'accelerator': "auto",
+        'devices': "auto",
+        # optional: mixed precision if you like
+        # 'precision': "16-mixed",
     }
 
-    # Add validation efficiency settings if specified in config
     if 'limit_val_batches' in cfg:
         trainer_kwargs['limit_val_batches'] = cfg['limit_val_batches']
-        print(
-            f"🎛️  Limiting validation to {cfg['limit_val_batches'] * 100 if cfg['limit_val_batches'] <= 1 else cfg['limit_val_batches']}{'%' if cfg['limit_val_batches'] <= 1 else ' batches'}")
+        print(f"limit_val_batches: {cfg['limit_val_batches']}")
 
     if 'num_sanity_val_steps' in cfg:
         trainer_kwargs['num_sanity_val_steps'] = cfg['num_sanity_val_steps']
-        print(f"🎛️  Using {cfg['num_sanity_val_steps']} sanity validation steps")
+        print(f"num_sanity_val_steps: {cfg['num_sanity_val_steps']}")
 
     trainer = pl.Trainer(**trainer_kwargs)
     trainer.fit(model, train_loader, val_loader)
@@ -106,6 +108,7 @@ def main(config):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--config", default="configs/default.yaml")
+    # feel free to switch default config path
+    p.add_argument("--config", default="configs/multi_stft_cnn.yaml")
     args = p.parse_args()
     main(args.config)
