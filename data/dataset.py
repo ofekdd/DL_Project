@@ -2,9 +2,45 @@ import torch
 import numpy as np
 import pathlib
 import re
-from torch.utils.data import Dataset, DataLoader
+import random
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 
 from var import band_ranges, n_ffts, LABELS
+
+# SpecAugment helper (frequency and time masking)
+def apply_spec_augment(spec: torch.Tensor, aug: dict):
+    """Apply simple SpecAugment on a single spectrogram tensor.
+    Expects spec shape [1, H, W] or [H, W]. Masks are filled with zeros.
+    """
+    if spec.dim() == 3:
+        _, H, W = spec.shape
+    else:
+        H, W = spec.shape[-2], spec.shape[-1]
+    out = spec.clone()
+
+    f_pct = float(aug.get("freq_mask_pct", 0.15))
+    t_pct = float(aug.get("time_mask_pct", 0.15))
+    n_f = int(aug.get("num_freq_masks", 2))
+    n_t = int(aug.get("num_time_masks", 2))
+
+    f = max(1, int(f_pct * H))
+    t = max(1, int(t_pct * W))
+
+    # Frequency masks
+    for _ in range(n_f):
+        if H - f <= 0:
+            break
+        f0 = random.randint(0, H - f)
+        out[..., f0:f0 + f, :] = 0.0
+
+    # Time masks
+    for _ in range(n_t):
+        if W - t <= 0:
+            break
+        t0 = random.randint(0, W - t)
+        out[..., :, t0:t0 + t] = 0.0
+
+    return out
 
 def multi_stft_pad_collate(batch):
     """
@@ -46,7 +82,7 @@ class MultiSTFTNpyDataset(Dataset):
     Dataset for loading all 3 spectrograms (optimized window sizes for each frequency band) for each audio file.
     """
 
-    def __init__(self, root, max_samples=None):
+    def __init__(self, root, max_samples=None, augment=False, spec_aug=None):
         # Handle string "None" from YAML config or convert string numbers to int
         if isinstance(max_samples, str):
             if max_samples.lower() == 'none':
@@ -88,6 +124,20 @@ class MultiSTFTNpyDataset(Dataset):
         # Define the expected spectrogram files for each audio
         self.band_ranges = band_ranges
         self.n_ffts = n_ffts
+
+        # Augmentation settings
+        self.augment = augment
+        default_aug = {"freq_mask_pct": 0.15, "time_mask_pct": 0.15, "num_freq_masks": 2, "num_time_masks": 2}
+        self.spec_aug = default_aug if spec_aug is None else {**default_aug, **spec_aug}
+
+        # Precompute labels for sampling (no disk I/O; parse from folder names only)
+        self.labels_for_sampling = []  # list of list[int] (class indices), possibly empty
+        for d in self.dirs:
+            lbs = []
+            for l in self._parse_labels_from_folder_name(d.name):
+                if l in self.label_map:
+                    lbs.append(self.label_map[l])
+            self.labels_for_sampling.append(lbs)
 
         # Debug: Check a few sample directories and their labels
         print(f"Dataset initialization complete. Final dataset size: {len(self.dirs)}")
@@ -181,6 +231,8 @@ class MultiSTFTNpyDataset(Dataset):
                 spec = np.zeros((10, 10), dtype=np.float32)
 
             spec_tensor = torch.tensor(spec).unsqueeze(0)  # [1,H,W]
+            if self.augment:
+                spec_tensor = apply_spec_augment(spec_tensor, self.spec_aug)
             specs.append(spec_tensor)
 
         # Debug: Check if we have any valid labels
@@ -193,7 +245,8 @@ class MultiSTFTNpyDataset(Dataset):
         return specs, y
 
 
-def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_stft=True, max_samples=None):
+def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_stft=True, max_samples=None,
+                        augment=False, spec_aug=None, use_weighted_sampler=False):
     """
     Create train and validation dataloaders
 
@@ -204,16 +257,19 @@ def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_st
         num_workers: Number of workers for data loading
         use_multi_stft: Whether to use MultiSTFTNpyDataset (for MultiSTFTCNN model)
         max_samples: Maximum number of samples to use for training (None for all samples)
+        augment: Apply SpecAugment on training spectrograms
+        spec_aug: Dict with SpecAugment hyperparameters
+        use_weighted_sampler: Use class-balanced sampling for training
 
     Returns:
         train_loader, val_loader: DataLoader objects for training and validation
     """
     print(f"Creating training dataset with max_samples={max_samples}")
-    train_ds = MultiSTFTNpyDataset(train_dir, max_samples=max_samples)
+    train_ds = MultiSTFTNpyDataset(train_dir, max_samples=max_samples, augment=augment, spec_aug=spec_aug)
     print(f"Training dataset size: {len(train_ds)}")
 
     print(f"Creating validation dataset...")
-    val_ds = MultiSTFTNpyDataset(val_dir)
+    val_ds = MultiSTFTNpyDataset(val_dir, augment=False)
     print(f"Validation dataset size: {len(val_ds)}")
 
     collate_fn = multi_stft_pad_collate
@@ -221,10 +277,40 @@ def create_dataloaders(train_dir, val_dir, batch_size, num_workers, use_multi_st
     if len(train_ds) == 0:
         raise ValueError("Training dataset is empty! Check your data preprocessing and label parsing.")
 
+    sampler = None
+    if use_weighted_sampler:
+        # Compute class counts from parsed labels
+        num_classes = len(LABELS)
+        class_counts = np.zeros(num_classes, dtype=np.float64)
+        for lbs in train_ds.labels_for_sampling:
+            if not lbs:
+                continue
+            for c in set(lbs):
+                class_counts[c] += 1.0
+        # Avoid div by zero
+        class_counts[class_counts == 0] = 1.0
+        class_weights = 1.0 / class_counts
+        # Normalize for stability
+        class_weights = class_weights / class_weights.sum() * num_classes
+
+        # Build per-sample weights
+        sample_weights = []
+        min_w = float(class_weights.min())
+        for lbs in train_ds.labels_for_sampling:
+            if lbs:
+                w = float(np.mean([class_weights[c] for c in lbs]))
+            else:
+                w = min_w
+            sample_weights.append(w)
+        weights_tensor = torch.DoubleTensor(sample_weights)
+        sampler = WeightedRandomSampler(weights_tensor, num_samples=len(sample_weights), replacement=True)
+        print("Using WeightedRandomSampler for class-balanced training")
+
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=(sampler is None),
+        sampler=sampler,
         num_workers=num_workers,
         collate_fn=collate_fn
     )

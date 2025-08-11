@@ -21,6 +21,7 @@ class PANNsLitModel(pl.LightningModule):
         self.freeze_epochs = cfg.get('freeze_epochs', 3)
         self.frozen_lr = cfg.get('frozen_learning_rate', 1e-3)
         self.finetune_lr = cfg.get('finetune_learning_rate', 1e-4)
+        self.label_smoothing = cfg.get('label_smoothing', 0.0)
 
         # Get PANNs checkpoint path
         panns_path = download_panns_checkpoint()
@@ -42,6 +43,7 @@ class PANNsLitModel(pl.LightningModule):
         print(f"✅ PANNs-enhanced model initialized!")
         print(f"   Initial phase: {self.freeze_epochs} epochs with frozen backbone (LR={self.frozen_lr})")
         print(f"   Fine-tuning phase: remaining epochs with full model (LR={self.finetune_lr})")
+        print(f"   Label smoothing: {self.label_smoothing}")
 
     def forward(self, x):
         return self.model(x)
@@ -57,7 +59,7 @@ class PANNsLitModel(pl.LightningModule):
         else:  # Already single-label format
             target_classes = y
 
-        loss = torch.nn.functional.cross_entropy(logits, target_classes)
+        loss = torch.nn.functional.cross_entropy(logits, target_classes, label_smoothing=self.label_smoothing)
 
         # Apply softmax to get probabilities for metrics
         probs = torch.nn.functional.softmax(logits, dim=1)
@@ -85,19 +87,27 @@ class PANNsLitModel(pl.LightningModule):
             print(f"{'='*80}\n")
 
     def configure_optimizers(self):
-        # Use different learning rates based on current training phase
-        if self.current_epoch < self.freeze_epochs:
-            # Only train fusion and classifier when backbone is frozen
-            trainable_params = list(self.model.fusion.parameters()) + list(self.model.classifier.parameters())
-            lr = self.frozen_lr
-            print(f"Optimizer: Using higher learning rate ({lr}) for fusion+classifier only")
-        else:
-            # Train everything after unfreezing
-            trainable_params = self.parameters()
-            lr = self.finetune_lr
-            print(f"Optimizer: Using lower learning rate ({lr}) for full model fine-tuning")
+        # Setup two param groups from the start. Backbone is frozen via requires_grad,
+        # and will be unfrozen at epoch == freeze_epochs.
+        backbone_params = []
+        for extractor in self.model.feature_extractors:
+            backbone_params += list(extractor.parameters())
+        fusion_cls_params = list(self.model.fusion.parameters()) + list(self.model.classifier.parameters())
 
-        return torch.optim.Adam(trainable_params, lr=lr, weight_decay=2e-4)  # Increased weight decay for better regularization
+        optimizer = torch.optim.Adam(
+            [
+                {"params": fusion_cls_params, "lr": self.frozen_lr},
+                {"params": backbone_params, "lr": self.finetune_lr},
+            ],
+            weight_decay=2e-4,
+        )
+        # Mild cosine decay over total epochs (keeps LR scheduling simple & robust)
+        t_max = int(self.hparams.get("num_epochs", 50)) if hasattr(self, "hparams") else 50
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "interval": "epoch"},
+        }
 
 
 def main(config):
@@ -116,13 +126,23 @@ def main(config):
     print(f"Using val_dir: {val_dir}")
 
     # Create dataloaders
+    # SpecAugment and sampler settings
+    spec_aug_cfg = cfg.get('spec_augment', {})
+    augment = (isinstance(spec_aug_cfg, dict) and spec_aug_cfg.get('enabled', False)) or (isinstance(spec_aug_cfg, bool) and spec_aug_cfg)
+    spec_aug_params = {k: v for k, v in spec_aug_cfg.items() if k != 'enabled'} if isinstance(spec_aug_cfg, dict) else None
+    use_weighted_sampler = cfg.get('use_weighted_sampler', True)
+    print(f"SpecAugment: {'ON' if augment else 'OFF'}; Weighted sampler: {'ON' if use_weighted_sampler else 'OFF'}")
+
     train_loader, val_loader = create_dataloaders(
         train_dir=train_dir,
         val_dir=val_dir,
         batch_size=cfg['batch_size'],
         num_workers=cfg['num_workers'],
         use_multi_stft=True,  # Use MultiSTFTNpyDataset for spectrograms
-        max_samples=cfg.get('max_samples', None)
+        max_samples=cfg.get('max_samples', None),
+        augment=augment,
+        spec_aug=spec_aug_params,
+        use_weighted_sampler=use_weighted_sampler
     )
 
     # Create PANNs-enhanced model
@@ -146,6 +166,11 @@ def main(config):
         'callbacks': callbacks,
         'accelerator': "auto",
     }
+
+    # Mixed precision for VRAM savings (safe on Colab GPUs)
+    if 'precision' in cfg:
+        trainer_kwargs['precision'] = cfg['precision']
+        print(f"Using precision={cfg['precision']}")
 
     # Add validation efficiency settings if specified
     if 'limit_val_batches' in cfg:

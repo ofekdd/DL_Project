@@ -21,3 +21,19 @@ original_data_percentage: 1  # Use all original IRMAS data, for fast run: 0.1
 max_original_samples: null  # Use all original samples, for fast run: 20
 max_samples: null  # Maximum samples to use for training (None for all), for fast run: 20
 max_test_samples: null # Maximum samples to use for testing (None for all), for fast run: 20
+
+# Regularization and augmentation
+label_smoothing: 0.05
+
+spec_augment:
+  enabled: true
+  freq_mask_pct: 0.15
+  time_mask_pct: 0.15
+  num_freq_masks: 2
+  num_time_masks: 2
+
+# Sampling
+use_weighted_sampler: true
+
+# Precision / performance
+precision: 16-mixed
