@@ -6,21 +6,6 @@ from torch.utils.data import Dataset, DataLoader
 
 from var import band_ranges, n_ffts, LABELS
 
-
-def pad_collate(batch):
-    xs, ys = zip(*batch)
-    # find max mel bins in batch
-    H = max(x.shape[1] for x in xs)
-    W = max(x.shape[2] for x in xs)  # optional time padding
-    padded = []
-    for x in xs:
-        pad_h = H - x.shape[1]
-        pad_w = W - x.shape[2]
-        x_padded = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h))  # (left, right, top, bottom)
-        padded.append(x_padded)
-    return torch.stack(padded), torch.stack(ys)
-
-
 def multi_stft_pad_collate(batch):
     """
     Collate function for MultiSTFTNpyDataset.

@@ -4,15 +4,13 @@
 Usage:
     python data/preprocess.py --in_dir data/raw/IRMAS --out_dir data/processed
 """
-import argparse, librosa, numpy as np, pathlib, tqdm, yaml, os, torch, tempfile
-from var import n_ffts, band_ranges_as_tuples, LABELS
+import argparse, librosa, numpy as np, pathlib, tqdm, yaml
+from var import n_ffts, band_ranges_as_tuples
 
 
 def generate_multi_stft(
         y: np.ndarray,
-        sr: int,
-        n_ffts=n_ffts,
-        band_ranges=band_ranges_as_tuples
+        sr: int
 ):
     """
     Generates 3 spectrograms: 3 window sizes × 3 frequency bands.
