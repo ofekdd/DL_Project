@@ -6,15 +6,9 @@ Example:
 """
 from __future__ import annotations
 
-import argparse, hashlib, urllib.request, sys, pathlib
-import random
+import argparse, hashlib, urllib.request, pathlib as Path
 import zipfile
-
-import librosa
-import torch
-from pathlib import Path
-
-from var import LABELS, IRMAS_TO_LABEL_MAP
+import pathlib
 
 IRMAS_URL = "https://zenodo.org/record/1290750/files/IRMAS-TrainingData.zip?download=1"
 IRMAS_TESTING_PART1_URL = "https://zenodo.org/record/1290750/files/IRMAS-TestingData-Part1.zip?download=1"
@@ -143,105 +137,6 @@ def find_irmas_root() -> pathlib.Path | None:
 
     print("No IRMAS dataset found in any of the expected locations")
     return None
-
-
-import pathlib
-import torch
-import random
-import librosa
-
-from var import LABELS
-
-
-def load_irmas_audio_dataset(irmas_root, cfg, max_samples=None):
-    """
-    Load training (single-label) audio from IRMAS dataset.
-    """
-    irmas_path = _pick_training_root(Path(irmas_root))
-    label_map = {label: i for i, label in enumerate(LABELS)}
-    dataset = []
-
-    # Limit sample count
-    if max_samples is None:
-        max_samples = cfg.get('max_original_samples', 100)
-    elif isinstance(max_samples, str) and max_samples.lower() == 'none':
-        max_samples = None
-
-    wav_files = list(irmas_path.rglob("*.wav"))
-    if max_samples and len(wav_files) > max_samples:
-        wav_files = random.sample(wav_files, max_samples)
-
-    print(f"Loading {len(wav_files)} training audio files...")
-
-    for wav_file in wav_files:
-        try:
-            irmas_label = wav_file.parent.name.lower()
-            our_label = IRMAS_TO_LABEL_MAP.get(irmas_label, irmas_label)
-
-            if our_label not in label_map:
-                continue
-
-            y, _ = librosa.load(wav_file, sr=cfg['sample_rate'], mono=True)
-            label_vec = torch.zeros(len(LABELS), dtype=torch.long)
-            label_vec[label_map[our_label]] = 1
-            dataset.append((torch.tensor(y, dtype=torch.float32), label_vec))
-
-        except Exception as e:
-            print(f"Error loading {wav_file}: {e}")
-
-    print(f"✅ Loaded {len(dataset)} training samples.")
-    return dataset
-
-
-def load_irmas_testing_dataset(test_dir, cfg):
-    """
-    Load testing (multi-label) IRMAS dataset.
-    Each audio file has a corresponding .txt file listing instruments.
-    """
-    test_path = _pick_testing_root(Path(test_dir))
-    label_map = {label: i for i, label in enumerate(LABELS)}
-    dataset = []
-
-    wav_files = list(test_path.rglob("*.wav"))
-
-    cap = cfg.get("max_test_samples")
-    cap = None if cap in (None, "None") else int(cap)
-    if cap is not None and len(wav_files) > cap:
-        random.shuffle(wav_files)
-        wav_files = wav_files[:cap]
-        print(f"⚖️  Capped to {cap} test WAVs for quick run")
-
-    print(f"Loading {len(wav_files)} testing audio files…")
-
-    for wav_file in wav_files:
-        try:
-            txt_path = wav_file.with_suffix('.txt')
-            if not txt_path.exists():
-                print(f"⚠️  Missing label file for {wav_file.name}")
-                continue
-
-            with open(txt_path, 'r') as f:
-                label_lines = f.readlines()
-
-            label_vec = torch.zeros(len(LABELS), dtype=torch.long)
-            for line in label_lines:
-                raw_label = line.strip().lower()
-                if raw_label in IRMAS_TO_LABEL_MAP:
-                    mapped = IRMAS_TO_LABEL_MAP[raw_label]
-                else:
-                    mapped = raw_label
-
-                if mapped in label_map:
-                    label_vec[label_map[mapped]] = 1
-
-            y, _ = librosa.load(wav_file, sr=cfg['sample_rate'], mono=True)
-            dataset.append((torch.tensor(y, dtype=torch.float32), label_vec))
-
-        except Exception as e:
-            print(f"Error loading {wav_file}: {e}")
-
-    print(f"✅ Loaded {len(dataset)} testing samples.")
-    return dataset
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
