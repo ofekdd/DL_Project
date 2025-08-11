@@ -4,7 +4,7 @@ sample_rate: 22050
 n_mels: 64
 hop_length: 512
 batch_size: 48  # Smaller batch size due to larger model
-num_workers: 2
+num_workers: 0  # Set to 0 for debugging (prevents potential dataloader deadlocks)
 
 # PANNs-specific settings
 frozen_learning_rate: 0.003  # Higher LR when backbone frozen
@@ -15,6 +15,9 @@ use_lr_scheduler: true  # Enable learning rate scheduler
 lr_scheduler_type: "cosine"  # Cosine annealing scheduler
 lr_warmup_epochs: 2  # Number of warmup epochs for scheduler (keep short for frozen phase)
 lr_min_factor: 0.01  # Minimum LR factor (final LR = initial LR * min_factor)
+
+# Debugging settings
+debug_first_iteration: true  # Use smaller batch size for first few iterations to debug memory issues
 
 # Training efficiency settings
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup

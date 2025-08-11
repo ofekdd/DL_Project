@@ -48,17 +48,40 @@ class PANNsLitModel(pl.LightningModule):
         return self.model(x)
 
     def common_step(self, batch, stage):
-        x, y = batch
-        logits = self(x)
+        try:
+            # Debug info for batch loading
+            x, y = batch
+            print(f"[DEBUG] Batch loaded: x type: {type(x)}, len: {len(x) if isinstance(x, list) else 'N/A'}, y shape: {y.shape}")
 
-        # For single-label classification, use cross-entropy loss
-        # Convert multi-hot targets to class indices if needed
-        if y.dim() > 1 and y.size(1) > 1:  # Multi-hot encoded
-            target_classes = torch.argmax(y, dim=1)  # Get the dominant instrument
-        else:  # Already single-label format
-            target_classes = y
+            # Check spectrograms shapes
+            if isinstance(x, list):
+                for i, spec in enumerate(x):
+                    print(f"[DEBUG] Spectrogram {i} shape: {spec.shape}, device: {spec.device}, dtype: {spec.dtype}")
 
-        loss = torch.nn.functional.cross_entropy(logits, target_classes)
+            # Forward pass with timing
+            import time
+            start_time = time.time()
+            logits = self(x)
+            forward_time = time.time() - start_time
+            print(f"[DEBUG] Forward pass completed in {forward_time:.3f}s, logits shape: {logits.shape}")
+
+            # For single-label classification, use cross-entropy loss
+            # Convert multi-hot targets to class indices if needed
+            if y.dim() > 1 and y.size(1) > 1:  # Multi-hot encoded
+                target_classes = torch.argmax(y, dim=1)  # Get the dominant instrument
+            else:  # Already single-label format
+                target_classes = y
+
+            print(f"[DEBUG] Target classes shape: {target_classes.shape}, device: {target_classes.device}")
+
+            loss = torch.nn.functional.cross_entropy(logits, target_classes)
+            print(f"[DEBUG] Loss calculated: {loss.item():.4f}")
+
+        except Exception as e:
+            import traceback
+            print(f"[ERROR] Exception in common_step: {e}")
+            print(traceback.format_exc())
+            raise e
 
         # Apply softmax to get probabilities for metrics
         probs = torch.nn.functional.softmax(logits, dim=1)
@@ -172,6 +195,26 @@ class PANNsLitModel(pl.LightningModule):
 
 
 def main(config):
+    # Check CUDA availability and memory status
+    if torch.cuda.is_available():
+        device_count = torch.cuda.device_count()
+        current_device = torch.cuda.current_device()
+        device_name = torch.cuda.get_device_name(current_device)
+        print(f"\n[DEBUG] CUDA is available: {device_count} device(s)")
+        print(f"[DEBUG] Current device: {current_device}, name: {device_name}")
+
+        # Memory info
+        try:
+            total_mem = torch.cuda.get_device_properties(current_device).total_memory / (1024**3)  # GB
+            reserved = torch.cuda.memory_reserved(current_device) / (1024**3)  # GB
+            allocated = torch.cuda.memory_allocated(current_device) / (1024**3)  # GB
+            free = total_mem - reserved
+            print(f"[DEBUG] GPU memory: total={total_mem:.2f}GB, reserved={reserved:.2f}GB, allocated={allocated:.2f}GB, free={free:.2f}GB")
+        except Exception as e:
+            print(f"[DEBUG] Error getting CUDA memory info: {e}")
+    else:
+        print("[WARNING] CUDA is not available. Training will be slow on CPU.")
+
     # Handle both file path and dictionary inputs
     if isinstance(config, dict):
         cfg = config
@@ -196,6 +239,30 @@ def main(config):
         max_samples=cfg.get('max_samples', None)
     )
 
+    # Debug info about dataloaders
+    print(f"\n[DEBUG] Train dataloader: {len(train_loader)} batches, batch size: {cfg['batch_size']}")
+    print(f"[DEBUG] Val dataloader: {len(val_loader)} batches, batch size: {cfg['batch_size']}")
+
+    # Check first batch
+    try:
+        print("[DEBUG] Attempting to load first batch from train loader...")
+        for i, (specs, labels) in enumerate(train_loader):
+            if i == 0:
+                print(f"[DEBUG] First batch loaded successfully")
+                if isinstance(specs, list):
+                    print(f"[DEBUG] Number of spectrograms: {len(specs)}")
+                    for j, spec in enumerate(specs):
+                        print(f"[DEBUG] Spectrogram {j} shape: {spec.shape}, dtype: {spec.dtype}")
+                else:
+                    print(f"[DEBUG] Spectrograms shape: {specs.shape}")
+                print(f"[DEBUG] Labels shape: {labels.shape}, dtype: {labels.dtype}")
+                print(f"[DEBUG] Labels summary: {labels.sum(dim=0)}")
+                break
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Exception loading first batch: {e}")
+        print(traceback.format_exc())
+
     # Create PANNs-enhanced model
     model = PANNsLitModel(cfg)
 
@@ -216,7 +283,19 @@ def main(config):
         'max_epochs': cfg.get('num_epochs', 15),  # Default to more epochs for the two-phase approach
         'callbacks': callbacks,
         'accelerator': "auto",
+        'profiler': "simple",  # Add profiler to see where time is being spent
     }
+
+    # Temporarily reduce batch size for first few iterations if GPU memory might be an issue
+    if cfg.get('debug_first_iteration', False):
+        small_batch_size = max(1, cfg['batch_size'] // 4)
+        print(f"[DEBUG] Using reduced batch size for debugging: {small_batch_size}")
+        train_loader = torch.utils.data.DataLoader(
+            train_loader.dataset,
+            batch_size=small_batch_size,
+            shuffle=True,
+            num_workers=0
+        )
 
     # Add validation efficiency settings if specified
     if 'limit_val_batches' in cfg:
