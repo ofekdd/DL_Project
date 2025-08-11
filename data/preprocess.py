@@ -37,7 +37,7 @@ def _morlet_kernel(scale_samples, w0, support, device, dtype=torch.complex64):
     psi = psi / torch.linalg.vector_norm(psi)
     return torch.flip(psi, dims=[0])  # conv-as-corr
 
-@torch.no_grad>()
+@torch.no_grad()
 def _prep_kernels_fft(num_scales, s_min, s_max, w0, support, N_target, device):
     scales = _make_scales(num_scales, s_min, s_max, device)
     ks = []
