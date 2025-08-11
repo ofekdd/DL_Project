@@ -23,3 +23,12 @@ original_data_percentage: 0.1  # Use only 10% of original IRMAS data for preproc
 
 # Training dataset settings
 max_samples: 50  # Maximum samples to use for training (None for all)
+
+num_scales: 256
+
+s_min_samples: 2.0
+s_max_samples: 512.0
+morlet_w0: 6.0
+morlet_support: 6.0
+max_duration_sec: 6.0   # trim/pad for speed (optional)
+peak_normalize: true
