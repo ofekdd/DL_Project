@@ -3,12 +3,18 @@ model_name: panns_enhanced
 sample_rate: 22050
 n_mels: 64
 hop_length: 512
-batch_size: 32  # Smaller batch size due to larger model
+batch_size: 48  # Smaller batch size due to larger model
 num_workers: 2
 
 # PANNs-specific settings
 frozen_learning_rate: 0.003  # Higher LR when backbone frozen
 finetune_learning_rate: 0.0002  # Adjusted LR for fine-tuning
+
+# Learning rate scheduler settings
+use_lr_scheduler: true  # Enable learning rate scheduler
+lr_scheduler_type: "cosine"  # Cosine annealing scheduler
+lr_warmup_epochs: 5  # Number of warmup epochs for scheduler
+lr_min_factor: 0.01  # Minimum LR factor (final LR = initial LR * min_factor)
 
 # Training efficiency settings
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup

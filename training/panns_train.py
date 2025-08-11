@@ -6,6 +6,7 @@ import yaml
 import argparse
 from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping, ModelCheckpoint
 from torchmetrics.classification import Accuracy
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 from models.panns_enhanced import MultiSTFTCNN_WithPANNs
 from data.dataset import create_dataloaders
@@ -97,7 +98,74 @@ class PANNsLitModel(pl.LightningModule):
             lr = self.finetune_lr
             print(f"Optimizer: Using lower learning rate ({lr}) for full model fine-tuning")
 
-        return torch.optim.Adam(trainable_params, lr=lr, weight_decay=2e-4)  # Increased weight decay for better regularization
+        optimizer = torch.optim.Adam(trainable_params, lr=lr, weight_decay=2e-4)  # Increased weight decay for better regularization
+
+        # Check if learning rate scheduler is enabled
+        use_scheduler = self.hparams.get('use_lr_scheduler', False)
+        if not use_scheduler:
+            return optimizer
+
+        # Configure learning rate scheduler
+        scheduler_type = self.hparams.get('lr_scheduler_type', 'cosine')
+        warmup_epochs = self.hparams.get('lr_warmup_epochs', 0)
+        min_lr_factor = self.hparams.get('lr_min_factor', 0.01)
+        max_epochs = self.trainer.max_epochs
+
+        # Adjust max epochs to account for the different phases
+        if self.current_epoch < self.freeze_epochs:
+            # When in freezing phase, scheduler is only for this phase
+            effective_max_epochs = self.freeze_epochs
+        else:
+            # When in fine-tuning phase, scheduler is for remaining epochs
+            effective_max_epochs = max_epochs - self.freeze_epochs
+            warmup_epochs = min(warmup_epochs, effective_max_epochs // 5)  # Adjust warmup for second phase
+
+        print(f"Scheduler: {scheduler_type} with {warmup_epochs} warmup epochs, min LR factor {min_lr_factor}")
+
+        if scheduler_type.lower() == 'cosine':
+            # Create scheduler dict for Pytorch Lightning
+            scheduler = {
+                'scheduler': torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer,
+                    T_max=effective_max_epochs - warmup_epochs,
+                    eta_min=lr * min_lr_factor
+                ),
+                'interval': 'epoch',
+                'frequency': 1,
+                'name': 'cosine_annealing_lr'
+            }
+
+            # If warmup is requested, use a chain of schedulers
+            if warmup_epochs > 0:
+                warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                    optimizer,
+                    start_factor=0.1,
+                    end_factor=1.0,
+                    total_iters=warmup_epochs
+                )
+                # Create a scheduler chain (warmup then cosine annealing)
+                scheduler_chain = [
+                    {
+                        'scheduler': warmup_scheduler,
+                        'interval': 'epoch',
+                        'frequency': 1,
+                        'name': 'warmup_lr',
+                        'position': 0
+                    },
+                    {
+                        'scheduler': scheduler['scheduler'],
+                        'interval': 'epoch',
+                        'frequency': 1,
+                        'name': 'cosine_annealing_lr',
+                        'position': 1
+                    }
+                ]
+                return [optimizer, scheduler_chain]
+
+            return [optimizer, scheduler]
+
+        # Default return if no specific scheduler is matched
+        return optimizer
 
 
 def main(config):
@@ -130,7 +198,7 @@ def main(config):
 
     # Setup callbacks with extended patience for the two-phase training
     callbacks = [
-        LearningRateMonitor(logging_interval='epoch'),
+        LearningRateMonitor(logging_interval='step'),  # More detailed LR logging for scheduler visualization
         EarlyStopping(monitor='val/Accuracy', mode='max', patience=12),  # Increased patience for deeper model
         ModelCheckpoint(
             monitor='val/Accuracy',
