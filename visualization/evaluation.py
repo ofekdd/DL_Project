@@ -6,12 +6,10 @@ import numpy as np
 import pathlib
 import yaml
 import re
-from sklearn.metrics import classification_report, confusion_matrix, average_precision_score
+from sklearn.metrics import confusion_matrix, average_precision_score
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 import matplotlib.pyplot as plt
 import seaborn as sns
-from collections import defaultdict
-import pandas as pd
 
 from data.dataset import MultiSTFTNpyDataset
 from utils.model_loader import load_model_from_checkpoint

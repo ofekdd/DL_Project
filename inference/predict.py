@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """CLI inference """
-import argparse, yaml, torch, librosa, numpy as np, pathlib
+import argparse, yaml, torch, librosa, pathlib
 
 from data.preprocess import generate_multi_stft
 from utils.model_loader import load_model_from_checkpoint
-from var import LABELS, n_ffts, band_ranges_as_tuples
+from var import LABELS
 
 def extract_features(path, cfg):
     """

@@ -7,7 +7,6 @@ import argparse
 from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping, ModelCheckpoint
 
 from models.panns_enhanced import MultiSTFTCNN_WithPANNs
-from training.callbacks import default_callbacks
 from training.metrics import MetricCollection
 from data.dataset import create_dataloaders
 from data.download_pnn import download_panns_checkpoint
