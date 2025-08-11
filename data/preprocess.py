@@ -14,6 +14,58 @@ import math
 import torch
 import torch.nn.functional as F
 
+import math, torch
+import torch.nn.functional as F
+import numpy as np
+
+@torch.no_grad()
+def _make_scales(num_scales, s_min, s_max, device):
+    return torch.logspace(
+        math.log10(s_min), math.log10(s_max), num_scales,
+        device=device, dtype=torch.float32
+    )
+
+@torch.no_grad()
+def _morlet_kernel(scale_samples, w0, support, device, dtype=torch.complex64):
+    s = float(scale_samples)
+    half = int(math.ceil(support * s))
+    t = torch.arange(-half, half + 1, device=device, dtype=torch.float32)
+    gauss = torch.exp(- (t ** 2) / (2.0 * (s ** 2)))
+    carrier = torch.exp(1j * (w0 * (t / s)))
+    psi = (math.pi ** (-0.25)) * carrier * gauss
+    psi = psi.to(dtype)
+    psi = psi / torch.linalg.vector_norm(psi)
+    return torch.flip(psi, dims=[0])  # conv-as-corr
+
+@torch.no_grad>()
+def _prep_kernels_fft(num_scales, s_min, s_max, w0, support, N_target, device):
+    scales = _make_scales(num_scales, s_min, s_max, device)
+    ks = []
+    Ls = []
+    for s in scales:
+        k = _morlet_kernel(float(s.item()), w0, support, device)
+        ks.append(k)
+        Ls.append(k.numel())
+    Lmax = max(Ls)
+    pad_left = [F.pad(k, (Lmax - k.numel(), 0)) for k in ks]  # left-pad to align centers
+    bank = torch.stack(pad_left, 0)  # [S, Lmax]
+
+    # FFT length fixed so we can reuse kernel FFTs across files
+    fft_len = 1 << int(math.ceil(math.log2(N_target + Lmax - 1)))
+    K = torch.fft.rfft(bank, n=fft_len, dim=-1)  # [S, fft_len//2+1], complex
+    center = (Lmax - 1) // 2  # for 'same' crop later
+    return K, fft_len, center, Lmax
+
+@torch.no_grad()
+def cwt_fft_signal(y_1d: np.ndarray, K: torch.Tensor, fft_len: int, center: int, N_target: int, device):
+    # y_1d MUST be length N_target (crop or right-pad beforehand)
+    x = torch.tensor(y_1d, dtype=torch.float32, device=device)
+    X = torch.fft.rfft(x, n=fft_len)              # [F]
+    Y = torch.fft.irfft(K * X[None, :], n=fft_len, dim=-1)  # [S, fft_len]
+    S = Y[:, center:center + N_target]            # [S, T] 'same' crop
+    mag = torch.abs(S).clamp_min(1e-8)
+    S_db = 20.0 * torch.log10(mag / mag.amax(dim=-1, keepdim=True).clamp_min(1e-8))
+    return S_db  # [S, T] float32
 
 # ----------------------------
 # Wavelet helpers (CPU)
