@@ -5,7 +5,6 @@ import torch
 from pathlib import Path
 import yaml
 
-from models.multi_stft_cnn import MultiSTFTCNN
 from models.panns_enhanced import MultiSTFTCNN_WithPANNs
 from data.download_pnn import download_panns_checkpoint
 from var import LABELS
@@ -112,31 +111,13 @@ def load_model(checkpoint_path, cfg=None, n_classes=None, force_architecture=Non
     # Clean state dict
     cleaned_state_dict = clean_state_dict(state_dict)
 
-    # Create appropriate model
-    if architecture == 'panns':
-        print(f"🏗️ Creating PANNs-enhanced model")
-        panns_path = download_panns_checkpoint()
-        model = MultiSTFTCNN_WithPANNs(
-            n_classes=n_classes,
-            pretrained_path=panns_path,
-            freeze_backbone=False
-        )
-    else:
-        print(f"🏗️ Creating regular MultiSTFTCNN model")
-        # Use configuration if provided
-        if cfg:
-            n_branches = cfg.get('n_branches', 9)
-            branch_output_dim = cfg.get('branch_output_dim', 128)
-        else:
-            n_branches = 9
-            branch_output_dim = 128
-
-        model = MultiSTFTCNN(
-            n_classes=n_classes, 
-            n_branches=n_branches, 
-            branch_output_dim=branch_output_dim
-        )
-
+    print(f"🏗️ Creating PANNs-enhanced model")
+    panns_path = download_panns_checkpoint()
+    model = MultiSTFTCNN_WithPANNs(
+        n_classes=n_classes,
+        pretrained_path=panns_path,
+        freeze_backbone=False
+    )
     # Load with error handling
     try:
         model.load_state_dict(cleaned_state_dict, strict=True)

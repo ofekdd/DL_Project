@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from models.multi_stft_cnn import STFTBranch
 
 class PANNsFeatureExtractor(nn.Module):
     """Extract the convolutional layers from PANNs CNN14 for feature extraction."""

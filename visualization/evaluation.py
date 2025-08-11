@@ -13,7 +13,6 @@ import seaborn as sns
 from collections import defaultdict
 import pandas as pd
 
-from models.multi_stft_cnn import MultiSTFTCNN
 from data.dataset import MultiSTFTNpyDataset
 from utils.model_loader import load_model_from_checkpoint
 from var import LABELS
@@ -395,7 +394,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate trained model")
     parser.add_argument("checkpoint", help="Path to model checkpoint")
     parser.add_argument("test_dir", help="Path to test data directory")
-    parser.add_argument("--config", default="configs/multi_stft_cnn.yaml", help="Config file")
+    parser.add_argument("--config", default="configs/panns_enhanced.yaml", help="Config file")
     parser.add_argument("--threshold", type=float, default=0.5, help="Classification threshold")
 
     args = parser.parse_args()

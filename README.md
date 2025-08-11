@@ -48,9 +48,6 @@ This project implements a deep learning model for recognizing musical instrument
 # Preprocess data
 python data/preprocess.py --in_dir path/to/IRMAS --out_dir data/processed
 
-# Train basic model
-python training/train.py --config configs/default.yaml
-
 # Train PANNs-enhanced model
 python training/panns_train.py --config configs/panns_enhanced.yaml
 ```
@@ -79,12 +76,6 @@ pip install -r requirements.txt
 
 ## Training
 
-### Standard Model Training
-
-```bash
-python -m training.train --config configs/multi_stft_cnn.yaml
-```
-
 ### PANNs-Enhanced Model Training
 
 Use pretrained AudioSet CNN14 model for a significant performance boost:
@@ -99,12 +90,6 @@ This uses a two-phase training approach:
 
 ## Inference
 
-### Single File Inference
-
-```bash
-python -m inference.predict <checkpoint_path> <wav_file> --config configs/multi_stft_cnn.yaml
-```
-
 ### Threshold-Based Evaluation
 
 ```bash
@@ -112,12 +97,6 @@ python -m inference.evaluate_model <checkpoint_path> <test_directory> --threshol
 ```
 
 ## Model Architecture
-
-### Standard Multi-STFT CNN
-
-- 9 CNN branches (3 window sizes × 3 frequency bands)
-- Each branch processes a different spectrogram representation
-- Feature fusion and classifier layers
 
 ### PANNs-Enhanced Model
 
@@ -148,7 +127,6 @@ cd instrument_classifier
 pip install -r requirements.txt
 python data/download_irmas.py  --out_dir data/raw
 python data/preprocess.py      --in_dir data/raw/IRMAS --out_dir data/processed
-python training/train.py       --config configs/model_resnet.yaml
 
 ```
 
