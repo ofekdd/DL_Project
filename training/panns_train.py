@@ -123,17 +123,12 @@ class PANNsLitModel(pl.LightningModule):
         print(f"Scheduler: {scheduler_type} with {warmup_epochs} warmup epochs, min LR factor {min_lr_factor}")
 
         if scheduler_type.lower() == 'cosine':
-            # Create scheduler dict for Pytorch Lightning
-            scheduler = {
-                'scheduler': torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer,
-                    T_max=effective_max_epochs - warmup_epochs,
-                    eta_min=lr * min_lr_factor
-                ),
-                'interval': 'epoch',
-                'frequency': 1,
-                'name': 'cosine_annealing_lr'
-            }
+            # Create the scheduler
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=effective_max_epochs - warmup_epochs,
+                eta_min=lr * min_lr_factor
+            )
 
             # If warmup is requested, use a chain of schedulers
             if warmup_epochs > 0:
@@ -143,26 +138,34 @@ class PANNsLitModel(pl.LightningModule):
                     end_factor=1.0,
                     total_iters=warmup_epochs
                 )
-                # Create a scheduler chain (warmup then cosine annealing)
-                scheduler_chain = [
-                    {
-                        'scheduler': warmup_scheduler,
-                        'interval': 'epoch',
-                        'frequency': 1,
-                        'name': 'warmup_lr',
-                        'position': 0
-                    },
-                    {
-                        'scheduler': scheduler['scheduler'],
-                        'interval': 'epoch',
-                        'frequency': 1,
-                        'name': 'cosine_annealing_lr',
-                        'position': 1
-                    }
-                ]
-                return [optimizer, scheduler_chain]
 
-            return [optimizer, scheduler]
+                # Sequential scheduler will handle the transition automatically
+                sequential_scheduler = SequentialLR(
+                    optimizer,
+                    schedulers=[warmup_scheduler, scheduler],
+                    milestones=[warmup_epochs]
+                )
+
+                return {
+                    "optimizer": optimizer,
+                    "lr_scheduler": {
+                        "scheduler": sequential_scheduler,
+                        "interval": "epoch",
+                        "frequency": 1,
+                        "name": "sequential_lr"
+                    }
+                }
+
+            # Just return the cosine scheduler if no warmup
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "interval": "epoch",
+                    "frequency": 1,
+                    "name": "cosine_annealing_lr"
+                }
+            }
 
         # Default return if no specific scheduler is matched
         return optimizer

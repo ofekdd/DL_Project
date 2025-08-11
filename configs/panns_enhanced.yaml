@@ -13,7 +13,7 @@ finetune_learning_rate: 0.0002  # Adjusted LR for fine-tuning
 # Learning rate scheduler settings
 use_lr_scheduler: true  # Enable learning rate scheduler
 lr_scheduler_type: "cosine"  # Cosine annealing scheduler
-lr_warmup_epochs: 5  # Number of warmup epochs for scheduler
+lr_warmup_epochs: 2  # Number of warmup epochs for scheduler (keep short for frozen phase)
 lr_min_factor: 0.01  # Minimum LR factor (final LR = initial LR * min_factor)
 
 # Training efficiency settings
