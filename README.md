@@ -1,133 +1,105 @@
-# Multi-Instrument Recognition System
-# Instrument Recognition in Musical Audio Signals (IRMAS)
+# Instrument Recognition in Musical Audio (IRMAS)
+
+A PyTorch Lightning project for recognizing musical instruments in audio clips using multi-band STFT features and a PANNs (AudioSet CNN14) warm-start.
 
 ## Overview
-This project implements a deep learning model for recognizing musical instruments in audio recordings, using the IRMAS dataset. The model combines multi-scale STFT spectrograms with transfer learning from PANNs (Pre-trained Audio Neural Networks).
+- Dataset: IRMAS (training is single-label per file; testing may include multiple instruments per file).
+- Features: Three STFT spectrograms per clip, each optimized for a frequency band:
+  - 0–1000 Hz with n_fft=1024
+  - 1000–4000 Hz with n_fft=512
+  - 4000–11025 Hz with n_fft=256
+- Model: MultiSTFTCNN enhanced with PANNs CNN14 feature extractors (one per band), fused via MLP and trained with a two-phase schedule (freeze then fine-tune).
 
-## Key Components
+## Repository structure
+- configs/panns_enhanced.yaml – training and preprocessing hyperparameters
+- data/download_irmas.py – download IRMAS training and testing zips
+- data/preprocess.py – generate and save spectrograms (.npy) for 3 bands per audio
+- data/dataset.py – dataset and dataloaders for the saved spectrograms
+- models/panns_enhanced.py – PANNs-enhanced MultiSTFT model
+- training/panns_train.py – Lightning training script (two-phase training)
+- inference/predict.py – CLI for single-file predictions and simple batch accuracy
+- utils/model_loader.py – robust checkpoint loader (auto-downloads PANNs weights)
+- var.py – class labels and STFT band definitions
 
-### Data Processing
-- Converts audio files to multi-band spectrograms optimized for different frequency ranges:
-  - Low frequencies (0-1000Hz): Long window (1024)
-  - Mid frequencies (1000-4000Hz): Medium window (512)
-  - High frequencies (4000-11025Hz): Short window (256)
-
-### Models
-1. **Basic Model**: Multi-branch CNN processing different frequency bands
-2. **PANNs-Enhanced Model**: Transfer learning from AudioSet pretrained models
-
-## Training Process
-
-### Two-Phase Training for PANNs Model
-1. **Phase 1**: Train only the fusion and classifier layers with frozen PANNs backbone
-   - Higher learning rate (0.001)
-   - Preserves pretrained knowledge
-2. **Phase 2**: Fine-tune the entire model including PANNs backbone
-   - Lower learning rate (0.0001)
-   - Adapts pretrained features to our task
-
-### Dataset Sizes
-- Train: 10,728 samples
-- Validation: 2,682 samples
-- Test: 2,874 samples
-
-## Performance Notes
-
-### Optimization Tips
-- **Multi-label Classification**: The model now properly handles multiple instruments in one sample using BCE loss and multilabel metrics
-- **Batch Size**: Using 16 provides a good balance between speed and stability
-- **Training Phases**: The two-phase approach helps preserve pretrained knowledge while adapting to our task
-
-### Interpretation
-- The 671 batches seen in training logs = 10,728 samples ÷ 16 batch size (rounded up)
-- F1 and Accuracy now use multilabel metrics for proper evaluation
-- Expect gradual improvements over multiple epochs during fine-tuning
-
-## Usage
+## Installation
+1) Create environment and install deps:
 ```bash
-# Preprocess data
-python data/preprocess.py --in_dir path/to/IRMAS --out_dir data/processed
+pip install -r requirements.txt
+```
 
-# Train PANNs-enhanced model
+## Data
+1) Download IRMAS (training + testing parts):
+```bash
+python data/download_irmas.py --out_dir data/raw
+```
+This will create data/raw/IRMAS-TrainingData and IRMAS-TestingData-Part*/.
+
+2) Preprocess audio into 3-band spectrograms (.npy):
+```bash
+python data/preprocess.py --in_dir data/raw/IRMAS-TrainingData --out_dir data/processed --config configs/panns_enhanced.yaml
+```
+Notes:
+- The CLI above performs a simple “mirror” conversion of any wavs under --in_dir to .npy spectrogram folders under --out_dir.
+- The file also contains a preprocess_data() function that can build train/val/test splits directly from IRMAS root. For most use cases, the CLI form is sufficient; training defaults expect data/processed/train and data/processed/val.
+
+## Training (PANNs-enhanced)
+Two-phase schedule:
+- Phase 1: PANNs backbone frozen; only fusion + classifier train at a higher LR.
+- Phase 2: Unfreeze all and fine-tune at a lower LR.
+
+Run:
+```bash
 python training/panns_train.py --config configs/panns_enhanced.yaml
 ```
-A deep learning system for recognizing multiple instruments in audio recordings.
+The script will automatically download the PANNs CNN14 checkpoint (AudioSet) on first use.
 
-## Features
-
-- Multi-label classification of 11 instrument classes
-- Multi-band, multi-resolution spectrogram analysis
-- PANNs-enhanced model using AudioSet pretrained features
-- Threshold-based evaluation metrics
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.7+
-- PyTorch 1.7+
-- PyTorch Lightning
-
-### Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-## Training
-
-### PANNs-Enhanced Model Training
-
-Use pretrained AudioSet CNN14 model for a significant performance boost:
-
-```bash
-python -m training.panns_train --config configs/panns_enhanced.yaml
-```
-
-This uses a two-phase training approach:
-1. First phase: Frozen backbone with higher learning rate
-2. Second phase: Full model fine-tuning with lower learning rate
+Default data locations used by the trainer (override via YAML):
+- train_dir: data/processed/train
+- val_dir:   data/processed/val
 
 ## Inference
-
-### Threshold-Based Evaluation
-
+Single file (top-1 softmax over 11 classes):
 ```bash
-python -m inference.evaluate_model <checkpoint_path> <test_directory> --threshold 0.6
+python inference/predict.py <checkpoint.ckpt> <path/to/file.wav> --config configs/panns_enhanced.yaml
 ```
+Batch prediction with running accuracy (if ground truth can be parsed from filenames/annotations) is available via predict_batch_with_accuracy in inference/predict.py.
 
-## Model Architecture
+## Hyperparameters (configs/panns_enhanced.yaml)
+Training/data:
+- sample_rate: 22050 – resample target for librosa.load
+- n_mels: 64 – not used by current STFT pipeline but kept for compatibility
+- hop_length: 512 – STFT hop for some utilities
+- batch_size: 32 – effective batch size for DataLoader
+- num_workers: 2 – DataLoader workers
+- num_epochs: 100 – total epochs for two-phase training
+- freeze_epochs: 4 – epochs with PANNs backbone frozen
+- limit_val_batches: 1.0 – fraction of val set per epoch (use <1.0 for quick runs)
+- num_sanity_val_steps: 2 – sanity steps before training
+- original_data_percentage: 1 – fraction of original IRMAS data to keep (for advanced preprocess path)
+- max_original_samples: null – optional cap on original samples
+- max_samples: null – cap training samples loaded by dataset (useful for quick runs)
+- max_test_samples: null – cap test samples during preprocess
 
-### PANNs-Enhanced Model
+Optimization:
+- frozen_learning_rate: 0.003 – LR while backbone is frozen
+- finetune_learning_rate: 0.0002 – LR after unfreezing
+- Optimizer: Adam with weight_decay=2e-4 (see training/panns_train.py)
+- Metric: torchmetrics Accuracy(task="multiclass")
 
-- Uses AudioSet pretrained CNN14 backbone
-- 3 feature extractors with pretrained weights
-- Feature fusion and classification layers
-- Typically achieves 80%+ mAP with less training
+Model specifics:
+- Backbone: PANNs CNN14 feature extractors (auto-downloaded to pretrained/Cnn14_mAP=0.431.pth)
+- Fusion MLP: 3×512 -> 1536 -> 768 -> 512 with BatchNorm, ReLU, Dropout(0.4/0.3)
+- Classifier: Linear(512 -> 11)
 
-## Evaluation
+Labels (var.LABELS):
+["cello","clarinet","flute","acoustic_guitar","organ","piano","saxophone","trumpet","violin","voice","other"]
 
-Our threshold-based evaluation provides a clear binary assessment of model performance:
-
-- Each instrument is predicted as present (1) or absent (0) using a threshold (default: 0.6)
-- Sample accuracy is calculated as correct predictions / total labels (e.g., 10/11 = 90.9%)
-- Detailed per-instrument metrics show exactly what the model gets right and wrong
+## Tips
+- For quick experiments, reduce batch_size and set max_samples, limit_val_batches < 1.0, and num_epochs small in the YAML.
+- Ensure each processed sample directory contains three files:
+  - 0-1000Hz_fft1024.npy
+  - 1000-4000Hz_fft512.npy
+  - 4000-11025Hz_fft256.npy
 
 ## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-# Instrument Classifier
-
-A PyTorch Lightning project for multi‑label musical instrument recognition from audio clips.
-Clone, install dependencies, preprocess data, and train:
-
-```bash
-git clone <repo-url>
-cd instrument_classifier
-pip install -r requirements.txt
-python data/download_irmas.py  --out_dir data/raw
-python data/preprocess.py      --in_dir data/raw/IRMAS --out_dir data/processed
-
-```
-
-See `configs/default.yaml` for full hyper‑parameters.
+MIT License (see LICENSE if present).
