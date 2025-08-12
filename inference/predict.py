@@ -9,6 +9,7 @@ from var import LABELS
 def extract_features(path, cfg):
     """
     Extract 3 spectrograms (3 window sizes × 3 frequency bands) from audio file.
+    No augmentation is applied during inference.
 
     Args:
         path: Path to audio file
@@ -18,7 +19,8 @@ def extract_features(path, cfg):
         List of 9 tensors, each of shape [1, 1, F, T]
     """
     y, sr = librosa.load(path, sr=cfg['sample_rate'], mono=True)
-    specs_dict = generate_multi_stft(y, sr)
+    # Never apply augmentation during inference
+    specs_dict = generate_multi_stft(y, sr, apply_augmentation=False)
 
     # For MultiSTFTCNN, we need all 3 spectrograms in the correct order
     specs_list = []

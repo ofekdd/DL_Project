@@ -10,11 +10,34 @@ num_workers: 2
 frozen_learning_rate: 0.003  # Higher LR when backbone frozen
 finetune_learning_rate: 0.0002  # Adjusted LR for fine-tuning
 
+# Data augmentation settings
+augmentation:
+  enabled: true
+  audio_augmentation_prob: 0.5
+  spec_augmentation_prob: 0.5
+  # Audio augmentation parameters
+  time_stretch_range: [0.9, 1.1]
+  pitch_shift_range: [-2, 2]
+  noise_factor: 0.01
+  volume_range: [0.8, 1.2]
+  # Spectrogram augmentation parameters
+  freq_mask_param: 8
+  time_mask_param: 15
+
+# Learning rate scheduler settings
+use_lr_scheduler: true  # Enable learning rate scheduler
+lr_scheduler_type: "cosine"  # Cosine annealing scheduler
+lr_warmup_epochs: 2  # Number of warmup epochs for scheduler (keep short for frozen phase)
+lr_min_factor: 0.01  # Minimum LR factor (final LR = initial LR * min_factor)
+
+# Debugging settings
+debug_first_iteration: true  # Use smaller batch size for first few iterations to debug memory issues
+
 # Training efficiency settings
 num_sanity_val_steps: 2  # Reduce sanity validation steps for faster startup
 
 # Training dataset settings
-num_epochs: 100  # Extended for two-phase training, for fast run: 2
+num_epochs: 50  # Extended for two-phase training, for fast run: 2
 freeze_epochs: 4  # Increased initial epochs with frozen backbone, for fast run: 1
 limit_val_batches: 1.0  # Use all validation data for reliable metrics, for fast run: 0.2
 original_data_percentage: 1  # Use all original IRMAS data, for fast run: 0.1
